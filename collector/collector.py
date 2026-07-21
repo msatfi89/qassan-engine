@@ -14,6 +14,7 @@ import re
 import sys
 import time
 from datetime import datetime, timezone
+from urllib.parse import unquote
 
 import requests
 import trafilatura
@@ -46,11 +47,29 @@ SOURCES = [
     {"name": "wmc_ar",      "url": "https://ar.webmanagercenter.com/"},
 ]
 
-# A link is interesting if its anchor text or URL matches any of these
-KEYWORDS = re.compile(
-    r"قطع|انقطاع|الكهرباء|الستاغ|الماء|الصوناد|قصان|تقص|coupure|électricité|electricite|steg|sonede|eau",
-    re.IGNORECASE,
+# Topic words. Latin terms are word-bounded: bare "eau" also matched
+# nouv-eau / rés-eau / bur-eau / niv-eau, which pulled in unrelated articles
+# from French news homepages by the dozen.
+TOPIC = (
+    r"قطع|انقطاع|الكهرباء|الماء|قصان|تقص|صيانة"
+    r"|\bcoupures?\b|\bélectricit[ée]\b|\belectricite\b|\beaux?\b|\bpotable\b"
 )
+
+# Utility names are a strong signal in link *text* ("la STEG annonce...") but
+# useless in a URL: every page on steg.com.tn contains "steg", so matching the
+# URL made the entire site qualify — the 15-link cap was then spent on the nav
+# bar and the real announcements further down the page were never reached.
+UTILITY = r"الستاغ|الصوناد|\bsteg\b|\bsonede\b"
+
+TOPIC_RE = re.compile(TOPIC, re.IGNORECASE)
+UTILITY_RE = re.compile(UTILITY, re.IGNORECASE)
+
+PER_SOURCE_CAP = 15  # politeness cap on article fetches per source per run
+
+# Non-navigable hrefs. absolutize() would turn "mailto:cnsd@steg.com.tn" into
+# "https://www.steg.com.tn/mailto:cnsd@steg.com.tn", and the address itself
+# contains "steg", so every contact link scored as a match and consumed the cap.
+SKIP_HREF = re.compile(r"^\s*(mailto:|tel:|javascript:|data:|ftp:|#)", re.IGNORECASE)
 
 LINK_RE = re.compile(r'<a\s[^>]*href="([^"#]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
@@ -89,15 +108,34 @@ def absolutize(base: str, href: str) -> str:
 
 
 def candidate_links(listing_html: str, base_url: str) -> list[str]:
-    seen, out = set(), []
+    """Rank by signal strength so the politeness cap is spent on real
+    announcements rather than on whatever appears first in the HTML.
+
+      tier 1 - link text names an outage ("إشعار بانقطاع الكهرباء")
+      tier 2 - decoded URL names an outage (.../coupures-delectricite-...)
+      tier 3 - link text only names the utility ("STEG en chiffres")
+
+    Tier 3 is kept because third-party articles often say "la STEG annonce",
+    but it must rank last: on steg.com.tn every nav link qualifies for it.
+    """
+    seen, tier1, tier2, tier3 = set(), [], [], []
     for href, anchor in LINK_RE.findall(listing_html):
+        if SKIP_HREF.match(href):
+            continue
         text = re.sub(r"<[^>]+>", " ", anchor)
-        if KEYWORDS.search(text) or KEYWORDS.search(href):
-            full = absolutize(base_url, href.strip())
-            if full not in seen and len(full) < 500:
-                seen.add(full)
-                out.append(full)
-    return out[:15]  # per source per run — politeness cap
+        full = absolutize(base_url, href.strip())
+        if full in seen or len(full) >= 500:
+            continue
+        seen.add(full)
+        if TOPIC_RE.search(text):
+            tier1.append(full)
+        # unquote: STEG's notice URLs carry the Arabic headline percent-encoded,
+        # so the raw href never matches an Arabic keyword.
+        elif TOPIC_RE.search(unquote(href)):
+            tier2.append(full)
+        elif UTILITY_RE.search(text):
+            tier3.append(full)
+    return (tier1 + tier2 + tier3)[:PER_SOURCE_CAP]
 
 
 def store_document(source: str, url: str, text: str) -> bool:
