@@ -3,6 +3,21 @@
 -- Run AFTER qassan-schema.sql, in the Supabase SQL editor.
 -- ============================================================
 
+-- RUN THIS FILE ONCE. The inserts below have no duplicate protection, and the
+-- delegation INSERT joins against the governorates it just inserted -- so a
+-- second run doesn't merely double the registry, it triples the delegations
+-- (86 -> 258), because each delegation matches both copies of its parent.
+-- This guard aborts the whole script (Supabase runs it as one transaction)
+-- if the registry is already seeded.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM places WHERE level = 'governorate') THEN
+    RAISE EXCEPTION
+      'places is already seeded (% rows). Aborting so the registry is not duplicated.',
+      (SELECT count(*) FROM places);
+  END IF;
+END $$;
+
 -- Audit trail: keep the parser's full JSON output per document
 ALTER TABLE raw_documents ADD COLUMN IF NOT EXISTS parsed_json JSONB;
 
