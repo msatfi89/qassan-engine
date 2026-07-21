@@ -1,0 +1,20 @@
+# Secrets — never commit these. Credentials live in GitHub Actions secrets only.
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
