@@ -159,6 +159,27 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip()).lower()
 
 
+# Announcements qualify place names in ways the registry does not:
+#   حي التضامن      (neighbourhood of ...)  vs registry's التضامن
+#   جهة زغوان       (region of ...)         vs registry's زغوان
+#   وسط مدينة صفاقس (city centre of ...)    vs registry's صفاقس
+# Longest alternatives first so "وسط مدينة" wins over "مدينة".
+PREFIX_RE = re.compile(r"^(?:وسط\s+مدينة|معتمدية|منطقة|ولاية|مدينة|جهة|حي)\s+")
+
+
+def lookup(registry: dict, raw: str):
+    """Name as written first; only then retry without a qualifying prefix.
+    The stripped form still has to exist in the registry, so this widens
+    matching without inventing places."""
+    key = norm(raw)
+    pl = registry.get(key)
+    if pl is None:
+        stripped = PREFIX_RE.sub("", key).strip()
+        if stripped and stripped != key:
+            pl = registry.get(stripped)
+    return pl
+
+
 def process(doc: dict, registry: dict) -> str:
     parsed = ask_claude(doc)
     if parsed is None:
@@ -199,13 +220,20 @@ def process(doc: dict, registry: dict) -> str:
     # link areas: governorates (broad) + localities (named_explicitly)
     links, unmatched = [], []
     for g in parsed.get("governorates") or []:
-        pl = registry.get(norm(g))
-        if pl and pl["level"] == "governorate":
+        pl = lookup(registry, g)
+        if pl:
+            # Accept any level here: STEG sometimes files جربة (a delegation)
+            # under governorates. Better linked to the right place than dropped.
             links.append({"event_id": event["id"], "place_id": pl["id"],
                           "named_explicitly": False, "raw_name_text": g})
+        else:
+            # Previously dropped in silence. STEG's operating regions
+            # (الجنوب الغربي, الشمال الغربي) are not governorates, so events
+            # covering them linked to nothing while keeping a high score.
+            unmatched.append(g)
     for loc in parsed.get("localities") or []:
         raw = loc.get("raw", "")
-        pl = registry.get(norm(raw))
+        pl = lookup(registry, raw)
         if pl:
             links.append({"event_id": event["id"], "place_id": pl["id"],
                           "named_explicitly": True, "raw_name_text": raw})
@@ -216,10 +244,20 @@ def process(doc: dict, registry: dict) -> str:
         uniq = {(l["event_id"], l["place_id"]): l for l in links}
         sb_post("event_areas", list(uniq.values()), prefer="return=minimal")
 
+    final = confidence
     if unmatched:
+        final = min(final, 0.6)
+    if not links:
+        # An outage attached to no place cannot be mapped or notified on, so it
+        # must never outrank a well-linked event in the approval queue.
+        final = min(final, 0.3)
+    if final != confidence:
         sb_patch("events", {"id": f"eq.{event['id']}"},
-                 {"extraction_confidence": min(confidence, 0.6)})
+                 {"extraction_confidence": round(final, 2)})
+    if unmatched:
         log_run(True, f"event {event['id']}: unmatched places {unmatched[:10]}")
+    if not links:
+        log_run(True, f"event {event['id']}: NO AREAS LINKED - review manually")
 
     sb_patch("raw_documents", {"id": f"eq.{doc['id']}"}, {"parse_status": "parsed"})
     return f"event:{event['id']} conf={confidence:.2f} unmatched={len(unmatched)}"

@@ -1,7 +1,12 @@
 name: qassan-engine
 on:
   schedule:
-    - cron: "*/30 * * * *"   # every 30 minutes
+    # Every 2 hours. At ~3 min/run, every-30-min works out to ~4,300 GitHub
+    # Actions minutes/month against a 2,000 free allowance on a private repo;
+    # this lands near 1,100. STEG publishes next-day notices, so 2h still
+    # catches announcements well ahead of the outage. Restore "*/30 * * * *"
+    # if the repo goes public (public repos get unlimited minutes).
+    - cron: "0 */2 * * *"
   workflow_dispatch: {}       # manual "Run workflow" button for testing
 
 jobs:
