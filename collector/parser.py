@@ -60,22 +60,32 @@ Rules:
 """
 
 
+def _check(r, verb: str, path: str) -> None:
+    """raise_for_status() drops the response body, but PostgREST puts the actual
+    reason there ('permission denied for table X', 'relation does not exist').
+    Without it a 403 is undiagnosable from the logs alone."""
+    if r.status_code >= 400:
+        raise RuntimeError(
+            f"{verb} {path} -> HTTP {r.status_code}: {r.text[:500] or '(empty body)'}"
+        )
+
+
 def sb_get(path: str, params: dict) -> list:
     r = requests.get(f"{SUPABASE_URL}/rest/v1/{path}", headers=DB, params=params, timeout=20)
-    r.raise_for_status()
+    _check(r, "GET", path)
     return r.json()
 
 
 def sb_post(path: str, body, prefer="return=representation"):
     h = dict(DB, Prefer=prefer)
     r = requests.post(f"{SUPABASE_URL}/rest/v1/{path}", headers=h, json=body, timeout=20)
-    r.raise_for_status()
+    _check(r, "POST", path)
     return r.json() if "representation" in prefer else None
 
 
 def sb_patch(path: str, params: dict, body: dict):
     r = requests.patch(f"{SUPABASE_URL}/rest/v1/{path}", headers=DB, params=params, json=body, timeout=20)
-    r.raise_for_status()
+    _check(r, "PATCH", path)
 
 
 def log_run(ok: bool, detail: str):

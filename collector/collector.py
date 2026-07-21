@@ -54,6 +54,9 @@ KEYWORDS = re.compile(
 
 LINK_RE = re.compile(r'<a\s[^>]*href="([^"#]+)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
+# HTTP status codes returned by rejected raw_documents writes (see store_document)
+REJECTIONS: list[int] = []
+
 
 def log_run(component: str, ok: bool, detail: str) -> None:
     try:
@@ -114,29 +117,54 @@ def store_document(source: str, url: str, text: str) -> bool:
         },
         timeout=20,
     )
-    return resp.status_code in (200, 201)  # 409 duplicate → False, fine
+    if resp.status_code in (200, 201):
+        return True
+    if resp.status_code == 409:  # duplicate content hash — expected, not an error
+        return False
+    # Anything else is a real rejection (auth, permissions, schema). Surface it:
+    # silently returning False here is what let a fully broken run report
+    # "0 new documents" and exit green.
+    print(f"  ! REJECTED [{source}] HTTP {resp.status_code}: {resp.text[:300]}",
+          file=sys.stderr)
+    REJECTIONS.append(resp.status_code)
+    return False
 
 
 def run() -> None:
-    new_docs = 0
+    new_docs, candidates, extracted = 0, 0, 0
     for src in SOURCES:
         listing = fetch(src["url"])
         if not listing:
             log_run("collector", False, f"listing unreachable: {src['name']}")
             continue
-        for link in candidate_links(listing, src["url"]):
+        links = candidate_links(listing, src["url"])
+        candidates += len(links)
+        print(f"  [{src['name']}] {len(links)} candidate link(s)")
+        for link in links:
             html = fetch(link)
             if not html:
                 continue
             text = trafilatura.extract(html) or ""
             if len(text) < 120:  # too short to be an announcement
                 continue
+            extracted += 1
             if store_document(src["name"], link, text):
                 new_docs += 1
                 print(f"  + stored [{src['name']}] {link}")
             time.sleep(1.5)  # politeness between article fetches
+
+    print(f"Collector done: {candidates} candidates, {extracted} articles extracted, "
+          f"{new_docs} new documents, {len(REJECTIONS)} rejected.")
+
+    # If we had articles to save and the database refused every one of them,
+    # that is a broken deployment, not an uneventful day. Fail loudly.
+    if REJECTIONS and new_docs == 0:
+        log_run("collector", False,
+                f"all {len(REJECTIONS)} writes rejected, e.g. HTTP {REJECTIONS[0]}")
+        sys.exit(f"FATAL: every write was rejected (HTTP {sorted(set(REJECTIONS))}). "
+                 f"Check SUPABASE_SERVICE_KEY and table permissions.")
+
     log_run("collector", True, f"run complete, {new_docs} new documents")
-    print(f"Collector done: {new_docs} new documents.")
 
 
 if __name__ == "__main__":
