@@ -45,7 +45,7 @@ export default function LoginPage() {
     <main className="login-wrap">
       <form className="card login" onSubmit={submit}>
         <h1>
-          Qassan <span className="badge">BETA</span>
+          9assan <span className="badge">BETA</span>
         </h1>
         <p className="muted">Approval dashboard — private</p>
 
