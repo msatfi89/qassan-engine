@@ -111,7 +111,11 @@ def log_run(ok: bool, detail: str):
 
 
 def ask_claude(doc: dict) -> dict | None:
-    header = f"source={doc['source_name']} | published={doc.get('published_at') or doc['fetched_at'][:10]} | url={doc['source_url']}"
+    # Trim published_at too: it arrives as a full timestamp
+    # (2025-07-09T00:00:00+00:00) and the prompt only ever reasons in days.
+    # A bare date also cannot be misread as implying a time of publication.
+    published = (doc.get("published_at") or doc["fetched_at"])[:10]
+    header = f"source={doc['source_name']} | published={published} | url={doc['source_url']}"
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
