@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { QueueEvent } from "@/lib/queue";
 import { unmatchedNames } from "@/lib/queue";
 
@@ -122,6 +123,10 @@ export default function EventCard({ ev }: { ev: QueueEvent }) {
             المصدر ↗
           </a>
         )}
+        {/* The only way to judge a reading is against the text it came from. */}
+        <Link href={`/admin/event/${ev.id}`} className="compare-link">
+          قارن بالنص الأصلي →
+        </Link>
       </div>
     </article>
   );

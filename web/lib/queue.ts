@@ -51,6 +51,25 @@ const SELECT = [
   "raw_documents(id,source_name,source_url,language,parsed_json)",
 ].join(",");
 
+/** One event with the full announcement text, for the comparison view. */
+export type EventDetail = QueueEvent & {
+  raw_documents:
+    | (SourceDoc & { raw_text: string; fetched_at?: string; published_at?: string | null })
+    | null;
+};
+
+export async function fetchEvent(id: number): Promise<EventDetail | null> {
+  const rows = await sbGet<EventDetail[]>("events", {
+    select: SELECT.replace(
+      "raw_documents(id,source_name,source_url,language,parsed_json)",
+      "raw_documents(id,source_name,source_url,language,parsed_json,raw_text,fetched_at,published_at)"
+    ),
+    id: `eq.${id}`,
+    limit: "1",
+  });
+  return rows[0] ?? null;
+}
+
 export async function fetchPendingEvents(): Promise<QueueEvent[]> {
   return sbGet<QueueEvent[]>("events", {
     select: SELECT,
