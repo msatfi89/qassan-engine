@@ -1,11 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Zap, Droplets, Clock, Radio, MapPin, Languages, AlertTriangle } from "lucide-react";
+import { Zap, Droplets, Clock, Radio, MapPin, Languages, AlertTriangle, Crosshair } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
 import { computeStatus, feedOrder, type StatusResult } from "@/lib/status";
+import { governorateAt } from "@/lib/geo";
 import type { PublicEvent, PublicPlace } from "@/lib/public-db";
 import AreaAndReport from "./AreaAndReport";
+import TunisiaMap, { type MapDatum } from "./TunisiaMap";
+
+/** How far back the front page looks. The archive stays in the database and
+ *  keeps its value; it just does not belong on a page answering "is my power
+ *  out right now" — a 3 July outage listed there reads as news. */
+const FEED_WINDOW_HOURS = 48;
 
 const LANG_KEY = "qassan.lang";
 const AREA_KEY = "qassan.area";
@@ -212,8 +219,44 @@ export default function PublicApp({
   const [lang, setLang] = useState<Lang>("ar");
   const [areaId, setAreaId] = useState<number | null>(null);
   const [tab, setTab] = useState<"all" | "electricity" | "water">("all");
+  const [govFilter, setGovFilter] = useState<string | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState<string | null>(null);
   const s = STR[lang];
   const rtl = lang === "ar";
+
+  /**
+   * Locate the visitor without transmitting anything.
+   *
+   * The browser gives us coordinates, we test them against the bundled
+   * governorate polygons in this tab, and we keep only the answer. The
+   * latitude and longitude are never sent to our server, never stored, and
+   * never written to localStorage — the design contract says device_hash
+   * only, and this respects it because no location ever leaves the device.
+   */
+  function locateMe() {
+    if (!("geolocation" in navigator)) { setLocError(s.locationDenied); return; }
+    setLocating(true);
+    setLocError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const gov = governorateAt(pos.coords.longitude, pos.coords.latitude);
+        setLocating(false);
+        if (!gov) { setLocError(s.locationDenied); return; }
+        const match = places.find(
+          (p) => p.level === "governorate" && p.name_ar === gov.properties.name_ar
+        );
+        if (!match) { setLocError(s.locationDenied); return; }
+        // Selects the governorate; the delegation is still the user's choice,
+        // because nothing in the registry knows where delegations are.
+        setGovFilter(gov.properties.name_ar);
+        setAreaId(match.id);
+        localStorage.setItem(AREA_KEY, String(match.id));
+      },
+      () => { setLocating(false); setLocError(s.locationDenied); },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 }
+    );
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem(LANG_KEY);
@@ -250,10 +293,58 @@ export default function PublicApp({
                      .sort((a, b) => (a._status.startsInMin ?? 0) - (b._status.startsInMin ?? 0))[0];
   const namedInLive = myLive?.event_areas.some((a) => a.place_id === area?.id && a.named_explicitly);
 
-  const feed = useMemo(
-    () => feedOrder(withStatus.filter((e) => tab === "all" || e.utility === tab)),
-    [withStatus, tab]
-  );
+  /** Governorate name for a place id, so map clicks can filter the feed. */
+  const govNameOf = useMemo(() => {
+    const byId = new Map(places.map((p) => [p.id, p]));
+    return (placeId: number): string | null => {
+      const p = byId.get(placeId);
+      if (!p) return null;
+      return p.level === "governorate"
+        ? p.name_ar
+        : (p.parent_id ? byId.get(p.parent_id)?.name_ar ?? null : null);
+    };
+  }, [places]);
+
+  const recent = useMemo(() => {
+    const cutoff = Date.now() - FEED_WINDOW_HOURS * 3600_000;
+    return withStatus.filter((e) => {
+      if (e._status.status === "upcoming") return true; // always show what is coming
+      if (!e.starts_at) return false;                   // undated archive rows
+      return new Date(e.starts_at).getTime() >= cutoff;
+    });
+  }, [withStatus]);
+
+  const feed = useMemo(() => {
+    let list = recent.filter((e) => tab === "all" || e.utility === tab);
+    if (govFilter) {
+      list = list.filter((e) => e.event_areas.some((a) => govNameOf(a.place_id) === govFilter));
+    }
+    return feedOrder(list);
+  }, [recent, tab, govFilter, govNameOf]);
+
+  /** Map shading. Built from the same recent window the feed uses, so the map
+   *  and the list can never disagree about what is happening. */
+  const mapData = useMemo(() => {
+    const out: Record<string, MapDatum> = {};
+    const touch = (name: string) =>
+      (out[name] ??= { liveElectric: false, liveWater: false, upcoming: false, reports: 0 });
+    for (const e of recent) {
+      for (const a of e.event_areas) {
+        const g = govNameOf(a.place_id);
+        if (!g) continue;
+        const d = touch(g);
+        if (e._status.status === "live") {
+          if (e.utility === "water") d.liveWater = true;
+          else d.liveElectric = true;
+        } else if (e._status.status === "upcoming") d.upcoming = true;
+      }
+    }
+    for (const [placeId, c] of Object.entries(reportCounts)) {
+      const g = govNameOf(Number(placeId));
+      if (g && c.cut > 0) touch(g).reports += c.cut;
+    }
+    return out;
+  }, [recent, reportCounts, govNameOf]);
 
   const counts = area ? reportCounts[area.id] : undefined;
 
@@ -326,7 +417,23 @@ export default function PublicApp({
         )}
 
         <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId} selectedId={areaId} />
+
+        <button onClick={locateMe} disabled={locating}
+                className="flex items-center gap-1.5 mt-3 text-xs px-3 py-2 rounded-lg"
+                style={{ background: "transparent", border: `1px solid ${T.line}`, color: T.muted }}>
+          <Crosshair size={13} /> {locating ? s.locating : s.useMyLocation}
+        </button>
+        {locError && <p className="text-xs mt-2" style={{ color: T.amber }}>{locError}</p>}
+        <p className="text-[11px] mt-1.5" style={{ color: T.muted }}>
+          {rtl
+            ? "موقعك يتحدد داخل هاتفك فقط — ما نبعثوه لحتى مكان."
+            : "Votre position est calculée sur votre téléphone — rien n'est transmis."}
+        </p>
       </section>
+
+      <div className="mb-4">
+        <TunisiaMap data={mapData} lang={lang} selected={govFilter} onSelect={setGovFilter} />
+      </div>
 
       {area && mine.length > 0 && (
         <div className="mb-4"><DayStrip events={mine} lang={lang} /></div>
