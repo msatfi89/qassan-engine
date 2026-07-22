@@ -42,10 +42,25 @@ SOURCES = [
     {"name": "sonede",      "url": "https://www.sonede.com.tn/mediatheque/actualites/"},
     {"name": "tuniscope",   "url": "https://www.tuniscope.com/"},
     # almasdar.tn 301s to ar.webmanagercenter.com — same site, listed once below
-    {"name": "assarih",     "url": "https://assarih.com/"},
     {"name": "directinfo",  "url": "https://directinfo.webmanagercenter.com/"},
     {"name": "wmc_ar",      "url": "https://ar.webmanagercenter.com/"},
+    # verified live 2026-07-22
+    {"name": "alikhbaria",  "url": "https://www.alikhbariaattounsia.com/"},
+    {"name": "tunimedia",   "url": "https://tunimedia.tn/"},
+    {"name": "tunisienum",  "url": "https://www.tunisienumerique.com/"},
+    {"name": "jawharafm",   "url": "https://www.jawharafm.net/"},
+    {"name": "mateurnews",  "url": "https://mateurnews.com/"},
 ]
+
+# PARKED — reachable by hand, useless from the GitHub runner. Revisit with a
+# proxy or a residential egress; their announcements are echoed elsewhere.
+#   assarih    https://assarih.com/          blocks datacentre IPs: every
+#                                            scheduled run logged "listing
+#                                            unreachable", though it serves
+#                                            fine from a home connection.
+#   mosaiquefm https://www.mosaiquefm.net/   returns only a <title>; the body
+#                                            is JS-rendered or behind a bot
+#                                            wall, so LINK_RE finds nothing.
 
 # Topic words. Latin terms are word-bounded: bare "eau" also matched
 # nouv-eau / rés-eau / bur-eau / niv-eau, which pulled in unrelated articles

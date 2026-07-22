@@ -46,6 +46,15 @@ and the parser must never invent or omit localities.
    Events accumulate as 'pending' — the approval dashboard (next build phase)
    is where Med bulk-approves them.
 
+## Parked sources (reachable by hand, not from CI)
+- **assarih.com** — blocks datacenter IPs. Every scheduled run logs
+  `listing unreachable: assarih`, yet it serves fine from a home connection
+  and carried 4 genuine outage notices when tested locally. Revisit with a
+  proxy later; its announcements are echoed by other sources.
+- **mosaiquefm.net** — returns only a `<title>`; the body is JS-rendered or
+  behind a bot wall, so the collector's link regex finds nothing. Same
+  remedy: a renderer or proxy, not a keyword change.
+
 ## Cost expectations
 5–15 new documents/day × one Claude call each ≈ cents/day. If a source floods
 (collector storing >50 docs/run), suspect the keyword filter and tighten it.
