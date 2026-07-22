@@ -164,15 +164,19 @@ def validate(p: dict, published: str) -> list[str]:
 
 
 def load_registry() -> dict:
-    """alias/lowered-name -> place row. Small enough to load whole."""
-    places = sb_get("places", {"select": "id,level,name_ar,name_fr,aliases,parent_id", "limit": "3000"})
-    idx = {}
+    """alias/lowered-name -> LIST of matching places.
+
+    A list, not a single row: place names are not unique nationally. الزهور is
+    a delegation in both تونس and القصرين, and both are official. Keeping only
+    the first match silently attached القصرين outages to a Tunis place."""
+    places = sb_get("places", {"select": "id,level,name_ar,name_fr,aliases,parent_id", "limit": "5000"})
+    idx: dict[str, list] = {}
     for pl in places:
         keys = {pl["name_ar"], pl.get("name_fr") or ""} | set(pl.get("aliases") or [])
         for k in keys:
             k = k.strip().lower()
-            if k:
-                idx.setdefault(k, pl)
+            if k and pl not in idx.setdefault(k, []):
+                idx[k].append(pl)
     return idx
 
 
@@ -188,17 +192,33 @@ def norm(s: str) -> str:
 PREFIX_RE = re.compile(r"^(?:وسط\s+مدينة|معتمدية|منطقة|ولاية|مدينة|جهة|حي)\s+")
 
 
-def lookup(registry: dict, raw: str):
-    """Name as written first; only then retry without a qualifying prefix.
-    The stripped form still has to exist in the registry, so this widens
-    matching without inventing places."""
+def lookup(registry: dict, raw: str, gov_ids: set | None = None):
+    """Resolve a name to one place, or None.
+
+    Name as written first; only then retry without a qualifying prefix. The
+    stripped form still has to exist in the registry, so this widens matching
+    without inventing places.
+
+    When a name exists in several governorates, it is resolved only if the
+    announcement itself named one of them. Otherwise it returns None and the
+    name is reported as unmatched — a name in the review queue is recoverable,
+    an outage silently pinned to the wrong governorate is not."""
     key = norm(raw)
-    pl = registry.get(key)
-    if pl is None:
+    matches = registry.get(key)
+    if not matches:
         stripped = PREFIX_RE.sub("", key).strip()
         if stripped and stripped != key:
-            pl = registry.get(stripped)
-    return pl
+            matches = registry.get(stripped)
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0]
+    if gov_ids:
+        scoped = [m for m in matches
+                  if m.get("parent_id") in gov_ids or m["id"] in gov_ids]
+        if len(scoped) == 1:
+            return scoped[0]
+    return None  # ambiguous — surfaced for review rather than guessed
 
 
 def process(doc: dict, registry: dict) -> str:
@@ -246,6 +266,16 @@ def process(doc: dict, registry: dict) -> str:
 
     # link areas: governorates (broad) + localities (named_explicitly)
     links, unmatched = [], []
+    # Governorates first: their ids scope the locality lookups below, which is
+    # what lets a name like الزهور resolve to the right one of two.
+    gov_ids = set()
+    for g in parsed.get("governorates") or []:
+        pl = lookup(registry, g)
+        if pl:
+            gov_ids.add(pl["id"])
+            if pl.get("parent_id"):
+                gov_ids.add(pl["parent_id"])  # e.g. جربة filed as a governorate
+
     for g in parsed.get("governorates") or []:
         pl = lookup(registry, g)
         if pl:
@@ -260,7 +290,7 @@ def process(doc: dict, registry: dict) -> str:
             unmatched.append(g)
     for loc in parsed.get("localities") or []:
         raw = loc.get("raw", "")
-        pl = lookup(registry, raw)
+        pl = lookup(registry, raw, gov_ids)
         if pl:
             links.append({"event_id": event["id"], "place_id": pl["id"],
                           "named_explicitly": True, "raw_name_text": raw})
