@@ -1,24 +1,96 @@
+import { isConfigured } from "@/lib/supabase";
+import { fetchPendingEvents, splitByConfidence, BULK_THRESHOLD } from "@/lib/queue";
+import EventCard from "./EventCard";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Piece 1 deliberately renders nothing but proof that the lock works. The
- * pending-events queue arrives in piece 2; putting it here now would mean
- * shipping the queue and the auth untested together.
- */
-export default function AdminHome() {
+export default async function AdminQueue() {
+  if (!isConfigured()) {
+    return (
+      <section className="card">
+        <h1>Approval queue</h1>
+        <p className="error">Supabase is not configured.</p>
+        <p className="muted">
+          Add <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_KEY</code> to{" "}
+          <code>web/.env.local</code> (locally) or to the Vercel project&apos;s
+          environment variables. See <code>web/.env.example</code>.
+        </p>
+      </section>
+    );
+  }
+
+  let events;
+  try {
+    events = await fetchPendingEvents();
+  } catch (err) {
+    // Show the real reason rather than a blank page — the same lesson the
+    // collector taught when a 403 spent three runs disguised as "0 documents".
+    return (
+      <section className="card">
+        <h1>Approval queue</h1>
+        <p className="error">Could not load the queue.</p>
+        <pre className="trace">{String(err instanceof Error ? err.message : err)}</pre>
+      </section>
+    );
+  }
+
+  const { high, low } = splitByConfidence(events);
+
   return (
-    <section className="card">
-      <h1>Approval dashboard</h1>
-      <p className="ok">You are signed in. The session cookie verified.</p>
-      <p className="muted">
-        Nothing is behind this page yet. Next: the pending-events queue,
-        grouped by confidence, with each event shown beside the original
-        announcement text it came from.
-      </p>
-      <p className="muted">
-        No event has been approved. Nothing publishes until one is.
-      </p>
-    </section>
+    <>
+      <section className="card summary">
+        <h1>Approval queue</h1>
+        <p className="muted">
+          {events.length} pending event{events.length === 1 ? "" : "s"} — none
+          published. Nothing leaves this page until you approve it.
+        </p>
+      </section>
+
+      <section className="queue-section">
+        <h2>
+          Ready for bulk approval
+          <span className="count">{high.length}</span>
+        </h2>
+        <p className="muted small">
+          Confidence ≥ {BULK_THRESHOLD.toFixed(2)}: every place name the
+          extractor found is in the registry and the deterministic checks
+          passed.
+        </p>
+        {high.length === 0 ? (
+          <p className="muted empty">
+            Nothing here yet. Confidence is capped at 0.60 whenever an
+            announcement names a place the registry does not know, so events
+            reach this tier only once coverage catches up.
+          </p>
+        ) : (
+          <div className="event-list">
+            {high.map((ev) => (
+              <EventCard key={ev.id} ev={ev} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="queue-section">
+        <h2>
+          Needs individual review
+          <span className="count">{low.length}</span>
+        </h2>
+        <p className="muted small">
+          Below {BULK_THRESHOLD.toFixed(2)} — usually unknown place names, not a
+          bad reading. Check each against its source.
+        </p>
+        {low.length === 0 ? (
+          <p className="muted empty">Nothing to review.</p>
+        ) : (
+          <div className="event-list">
+            {low.map((ev) => (
+              <EventCard key={ev.id} ev={ev} />
+            ))}
+          </div>
+        )}
+      </section>
+    </>
   );
 }
