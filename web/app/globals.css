@@ -332,3 +332,69 @@ button.ghost {
   padding: 4px 0;
 }
 .rawpeek .rawtext { margin-top: 8px; max-height: 40vh; }
+
+/* ---------- public app ---------- */
+.public-wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+.public-header { text-align: center; margin-bottom: 20px; }
+.public-header h1 { font-size: 1.8rem; }
+
+.area-card { margin-bottom: 24px; }
+.area-card h2 { font-size: 1rem; margin: 0 0 10px; }
+.pickers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 480px) { .pickers { grid-template-columns: 1fr; } }
+select {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+select:disabled { opacity: 0.5; }
+
+.report-row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.report-row button { flex: 1; min-width: 140px; padding: 13px 16px; }
+button.report.out { background: var(--amber); color: #1a1205; }
+button.report.back { background: var(--ok); color: #062512; }
+.confirm-step { margin-top: 14px; }
+.confirm-step p { margin: 0 0 4px; }
+.report-msg { margin: 10px 0 0; color: var(--ok); }
+
+.feed h2 { font-size: 1rem; margin: 0 0 12px; }
+.feed-list { display: grid; gap: 10px; }
+.feed-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--amber);
+  border-radius: 10px;
+  padding: 14px;
+}
+.feed-item.water { border-inline-start-color: var(--aqua); }
+.feed-head { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.chip.precise { border-color: var(--ok); color: var(--ok); }
+.feed-when { margin: 0 0 6px; }
+.feed-areas { margin: 0 0 6px; font-size: 0.92rem; line-height: 1.8; }
+.feed-cause {
+  margin: 6px 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 8px;
+}
+.feed-source { margin: 8px 0 0; }
+
+/* An empty feed is good news, not an error. */
+.invite {
+  text-align: center;
+  line-height: 2;
+  border-color: var(--border);
+}
+
+.public-foot {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  line-height: 1.9;
+}

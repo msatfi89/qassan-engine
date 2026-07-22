@@ -40,6 +40,32 @@ export async function sbGet<T>(
   return res.json() as Promise<T>;
 }
 
+/** POST against PostgREST. */
+export async function sbPost<T>(
+  path: string,
+  body: unknown,
+  prefer = "return=representation"
+): Promise<T | null> {
+  const { url, key } = config();
+  const res = await fetch(`${url}/rest/v1/${path}`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: prefer,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `POST ${path} -> ${res.status}: ${(await res.text()).slice(0, 300)}`
+    );
+  }
+  return prefer.includes("representation") ? ((await res.json()) as T) : null;
+}
+
 /** PATCH against PostgREST. Returns the updated rows. */
 export async function sbPatch<T>(
   path: string,
