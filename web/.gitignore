@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+build/
+
+# Secrets — the dashboard password and session key live here locally.
+.env
+.env.local
+.env*.local
+
+.vercel
+*.tsbuildinfo
+next-env.d.ts

@@ -1,6 +1,9 @@
 # Secrets — never commit these. Credentials live in GitHub Actions secrets only.
 .env
 .env.*
+# ...except the template, which lists the variable NAMES and no values. Without
+# it a fresh deploy has no record of what must be configured.
+!.env.example
 *.key
 *.pem
 secrets.json

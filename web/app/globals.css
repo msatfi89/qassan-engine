@@ -1,0 +1,100 @@
+/* Dark night-blue theme, matching design-reference-app.jsx, which Med
+   approved. The public app in Task 3 will build on these same tokens. */
+:root {
+  --bg: #0b1220;
+  --surface: #131c2e;
+  --border: #24304a;
+  --text: #e8edf7;
+  --muted: #93a1bd;
+  --amber: #f5a524; /* electricity */
+  --aqua: #22b8cf;  /* water */
+  --ok: #38b26a;
+  --error: #e5484d;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, "Segoe UI", Tahoma, "Noto Naskh Arabic", sans-serif;
+  line-height: 1.6;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+
+h1 { font-size: 1.35rem; margin: 0 0 4px; }
+.muted { color: var(--muted); }
+.ok { color: var(--ok); }
+.error { color: var(--error); }
+
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  vertical-align: middle;
+}
+
+/* ---------- login ---------- */
+.login-wrap {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.login { width: min(380px, 100%); display: grid; gap: 10px; }
+.login label { font-size: 0.85rem; color: var(--muted); }
+
+input, button {
+  font: inherit;
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+input {
+  background: var(--bg);
+  color: var(--text);
+  /* Passwords and place names are Latin/Arabic mixed; keep entry LTR so the
+     caret behaves predictably inside an RTL document. */
+  direction: ltr;
+  text-align: left;
+}
+input:focus { outline: 2px solid var(--amber); outline-offset: 1px; }
+
+button {
+  background: var(--amber);
+  color: #1a1205;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---------- admin shell ---------- */
+.admin-shell { max-width: 1100px; margin: 0 auto; padding: 20px; }
+.admin-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.admin-header .logout { margin-inline-start: auto; }
+.admin-header .logout button {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 400;
+  padding: 6px 12px;
+}
