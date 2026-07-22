@@ -122,7 +122,7 @@ def absolutize(base: str, href: str) -> str:
     return root + (href if href.startswith("/") else "/" + href)
 
 
-def candidate_links(listing_html: str, base_url: str) -> list[str]:
+def candidate_links(listing_html: str, base_url: str, cap: int | None = PER_SOURCE_CAP) -> list[str]:
     """Rank by signal strength so the politeness cap is spent on real
     announcements rather than on whatever appears first in the HTML.
 
@@ -150,24 +150,32 @@ def candidate_links(listing_html: str, base_url: str) -> list[str]:
             tier2.append(full)
         elif UTILITY_RE.search(text):
             tier3.append(full)
-    return (tier1 + tier2 + tier3)[:PER_SOURCE_CAP]
+    ranked = tier1 + tier2 + tier3
+    # cap=None: take everything. The backfill wants completeness over a fixed
+    # past month, where the politeness cap would silently truncate history.
+    return ranked if cap is None else ranked[:cap]
 
 
-def store_document(source: str, url: str, text: str) -> bool:
+def store_document(source: str, url: str, text: str, is_backfill: bool = False) -> bool:
     content_hash = hashlib.sha256(
         re.sub(r"\s+", " ", text.strip()).encode("utf-8")
     ).hexdigest()
     lang = "ar" if re.search(r"[\u0600-\u06FF]", text) else "fr"
+    body = {
+        "source_name": source,
+        "source_url": url[:990],
+        "content_hash": content_hash,
+        "language": lang,
+        "raw_text": text[:60000],
+    }
+    if is_backfill:
+        # Only sent when true, so live collection keeps working on a database
+        # where backfill-schema.sql has not been applied yet.
+        body["is_backfill"] = True
     resp = requests.post(
         f"{SUPABASE_URL}/rest/v1/raw_documents",
         headers=HEADERS_DB,
-        json={
-            "source_name": source,
-            "source_url": url[:990],
-            "content_hash": content_hash,
-            "language": lang,
-            "raw_text": text[:60000],
-        },
+        json=body,
         timeout=20,
     )
     if resp.status_code in (200, 201):

@@ -11,6 +11,7 @@ NOTHING is published without approval. The AI never invents; we verify.
 Run: python parser.py  (env: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY)
 """
 
+import argparse
 import json
 import os
 import re
@@ -18,6 +19,18 @@ import sys
 from datetime import datetime, timezone
 
 import requests
+
+MODEL = "claude-sonnet-4-6"
+# USD per million tokens for MODEL. Used only to report what a run cost;
+# update alongside MODEL if it changes.
+PRICE_IN, PRICE_OUT = 3.00, 15.00
+USAGE = {"calls": 0, "in": 0, "out": 0}
+
+
+def usage_summary() -> str:
+    cost = USAGE["in"] / 1e6 * PRICE_IN + USAGE["out"] / 1e6 * PRICE_OUT
+    return (f"{USAGE['calls']} Claude calls, {USAGE['in']:,} in / "
+            f"{USAGE['out']:,} out tokens, ${cost:.2f}")
 
 SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
@@ -104,15 +117,23 @@ def ask_claude(doc: dict) -> dict | None:
         headers={"x-api-key": ANTHROPIC_KEY, "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
         json={
-            "model": "claude-sonnet-4-6",
+            "model": MODEL,
             "max_tokens": 2000,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": header + "\n\n" + doc["raw_text"][:15000]}],
         },
         timeout=90,
     )
-    r.raise_for_status()
-    text = "".join(b.get("text", "") for b in r.json()["content"] if b.get("type") == "text")
+    if r.status_code >= 400:
+        # Body carries the real reason (rate limit, credit exhausted, bad
+        # model id). Over a long backfill these are the failures that matter.
+        raise RuntimeError(f"Anthropic API {r.status_code}: {r.text[:400]}")
+    payload = r.json()
+    u = payload.get("usage") or {}
+    USAGE["calls"] += 1
+    USAGE["in"] += u.get("input_tokens", 0)
+    USAGE["out"] += u.get("output_tokens", 0)
+    text = "".join(b.get("text", "") for b in payload["content"] if b.get("type") == "text")
     text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
     try:
         return json.loads(text)
@@ -203,7 +224,7 @@ def process(doc: dict, registry: dict) -> str:
             return None
         return f"{day}T{hhmm}:00+01:00"
 
-    event = sb_post("events", {
+    event_body = {
         "utility": parsed["utility"],
         "event_kind": parsed["event_kind"],
         "status": "upcoming",
@@ -215,7 +236,13 @@ def process(doc: dict, registry: dict) -> str:
         "source_document_id": doc["id"],
         "extraction_confidence": round(confidence, 2),
         "approval_status": "pending",
-    })[0]
+    }
+    if doc.get("is_backfill"):
+        # Only sent when true, so live parsing still works on a database where
+        # backfill-schema.sql has not been applied. Approval gate is unchanged:
+        # historical events are 'pending' like every other event.
+        event_body["backfilled"] = True
+    event = sb_post("events", event_body)[0]
 
     # link areas: governorates (broad) + localities (named_explicitly)
     links, unmatched = [], []
@@ -263,27 +290,43 @@ def process(doc: dict, registry: dict) -> str:
     return f"event:{event['id']} conf={confidence:.2f} unmatched={len(unmatched)}"
 
 
-def run():
-    docs = sb_get("raw_documents",
-                  {"select": "*", "parse_status": "eq.new",
-                   "order": "fetched_at.asc", "limit": "25"})
-    if not docs:
+def run(limit: int = 25, drain: bool = False) -> None:
+    registry, total = None, 0
+    while True:
+        docs = sb_get("raw_documents",
+                      {"select": "*", "parse_status": "eq.new",
+                       "order": "fetched_at.asc", "limit": str(limit)})
+        if not docs:
+            break
+        if registry is None:
+            registry = load_registry()  # loaded once, reused across batches
+        results = []
+        for doc in docs:
+            try:
+                results.append(process(doc, registry))
+            except Exception as e:
+                sb_patch("raw_documents", {"id": f"eq.{doc['id']}"}, {"parse_status": "failed"})
+                results.append(f"failed:{e}")
+                print(f"  parse failed doc {doc['id']}: {e}", file=sys.stderr)
+        total += len(docs)
+        log_run(all(not r.startswith("failed") for r in results),
+                f"{len(docs)} docs -> {results[:15]}")
+        print(f"  batch of {len(docs)}: {results}")
+        if not drain:
+            break  # one batch per scheduled run, as before
+
+    if total == 0:
         log_run(True, "no new documents")
         print("Parser: nothing new.")
         return
-    registry = load_registry()
-    results = []
-    for doc in docs:
-        try:
-            results.append(process(doc, registry))
-        except Exception as e:
-            sb_patch("raw_documents", {"id": f"eq.{doc['id']}"}, {"parse_status": "failed"})
-            results.append(f"failed:{e}")
-            print(f"  parse failed doc {doc['id']}: {e}", file=sys.stderr)
-    log_run(all(not r.startswith("failed") for r in results),
-            f"{len(docs)} docs -> {results[:15]}")
-    print(f"Parser done: {results}")
+    print(f"Parser done: {total} document(s). {usage_summary()}")
+    log_run(True, f"{total} docs parsed; {usage_summary()}")
 
 
 if __name__ == "__main__":
-    run()
+    ap = argparse.ArgumentParser(description="Parse new raw_documents into pending events.")
+    ap.add_argument("--all", action="store_true",
+                    help="keep going until no documents remain (use for backfill)")
+    ap.add_argument("--limit", type=int, default=25, help="documents per batch")
+    args = ap.parse_args()
+    run(limit=args.limit, drain=args.all)

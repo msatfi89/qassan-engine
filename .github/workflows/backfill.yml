@@ -1,0 +1,54 @@
+name: qassan-backfill
+
+# Manual only — never on a schedule. Each run costs real Claude credits and
+# crawls a few hundred archive pages, so it is triggered deliberately, one
+# month at a time, from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "Month to backfill, as YYYY-MM (e.g. 2025-07)"
+        required: true
+        default: "2025-07"
+      dry_run:
+        description: "Count candidates only — no downloads, no writes, no Claude calls"
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # The main collect job caps at 12 min; a month's archive walk plus parsing
+    # comfortably exceeds that. Well under GitHub's 6-hour ceiling.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r collector/requirements.txt
+
+      - name: Crawl archives (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python collector/backfill.py "${{ inputs.month }}" --dry-run
+
+      - name: Crawl archives and store documents
+        if: ${{ !inputs.dry_run }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python collector/backfill.py "${{ inputs.month }}"
+
+      # --all drains the queue instead of stopping at one 25-document batch,
+      # and reports exact token usage and dollar cost when it finishes.
+      - name: Parse backfilled documents
+        if: ${{ !inputs.dry_run }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python collector/parser.py --all
