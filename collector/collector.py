@@ -156,6 +156,23 @@ def candidate_links(listing_html: str, base_url: str, cap: int | None = PER_SOUR
     return ranked if cap is None else ranked[:cap]
 
 
+# WordPress-style article URLs carry their publication date: /2025/07/03/slug.
+# Without it the parser falls back to fetched_at, which for a backfill is the
+# day we crawled — so a 2025 announcement would be dated to today.
+ARTICLE_DATE_RE = re.compile(r"/(20\d{2})/(\d{1,2})/(\d{1,2})/")
+
+
+def url_published_date(url: str) -> str | None:
+    """ISO date from the URL path, or None if it carries no plausible date."""
+    m = ARTICLE_DATE_RE.search(url)
+    if not m:
+        return None
+    year, month, day = (int(g) for g in m.groups())
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
 def store_document(source: str, url: str, text: str, is_backfill: bool = False) -> bool:
     content_hash = hashlib.sha256(
         re.sub(r"\s+", " ", text.strip()).encode("utf-8")
@@ -172,6 +189,11 @@ def store_document(source: str, url: str, text: str, is_backfill: bool = False) 
         # Only sent when true, so live collection keeps working on a database
         # where backfill-schema.sql has not been applied yet.
         body["is_backfill"] = True
+    # Applies to live collection too: when the URL states the date, it beats
+    # inferring one from when the crawler happened to run.
+    published = url_published_date(url)
+    if published:
+        body["published_at"] = published
     resp = requests.post(
         f"{SUPABASE_URL}/rest/v1/raw_documents",
         headers=HEADERS_DB,
