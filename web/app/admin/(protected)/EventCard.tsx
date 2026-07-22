@@ -6,11 +6,15 @@ const TZ = "Africa/Tunis";
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
+  // The year is not optional here: the queue mixes backfilled 2023-2025
+  // announcements with today's, and "ven. 24 juil." alone cannot be told
+  // apart between them — which is precisely where a mistake would matter.
   return new Intl.DateTimeFormat("fr-TN", {
     timeZone: TZ,
     weekday: "short",
     day: "2-digit",
     month: "short",
+    year: "numeric",
   }).format(new Date(iso));
 }
 
