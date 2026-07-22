@@ -174,13 +174,32 @@ def load_registry() -> dict:
     for pl in places:
         keys = {pl["name_ar"], pl.get("name_fr") or ""} | set(pl.get("aliases") or [])
         for k in keys:
-            k = k.strip().lower()
+            # norm(), not .lower(): keys and lookup terms must be folded
+            # identically, or a registry entry spelled أريانة would never be
+            # found by a search that normalises أ to ا.
+            k = norm(k)
             if k and pl not in idx.setdefault(k, []):
                 idx[k].append(pl)
     return idx
 
 
+# Arabic orthography varies between announcements and reference lists without
+# changing the place. Folding these is what lets الفوّار match الفوار.
+#   ً-ْ  tashkeel (fatha, damma, shadda, sukun ...)
+#   ـ         tatweel, the decorative kashida stretch
+_TASHKEEL = re.compile(r"[ً-ْـ]")
+_ALEF = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا",
+                       "ٱ": "ا", "ى": "ي"})
+
+
 def norm(s: str) -> str:
+    """Fold case, whitespace and Arabic orthographic variation.
+
+    Applied identically to registry keys and to lookup terms, so it can only
+    widen matching, never mismatch. Deliberately does NOT fold ة to ه: that
+    pair distinguishes real words, and a wrong match is worse than a miss."""
+    s = _TASHKEEL.sub("", s)
+    s = s.translate(_ALEF)
     return re.sub(r"\s+", " ", s.strip()).lower()
 
 
@@ -192,7 +211,8 @@ def norm(s: str) -> str:
 PREFIX_RE = re.compile(r"^(?:وسط\s+مدينة|معتمدية|منطقة|ولاية|مدينة|جهة|حي)\s+")
 
 
-def lookup(registry: dict, raw: str, gov_ids: set | None = None):
+def lookup(registry: dict, raw: str, gov_ids: set | None = None,
+           prefer_level: str | None = None):
     """Resolve a name to one place, or None.
 
     Name as written first; only then retry without a qualifying prefix. The
@@ -213,6 +233,18 @@ def lookup(registry: dict, raw: str, gov_ids: set | None = None):
         return None
     if len(matches) == 1:
         return matches[0]
+
+    # Narrow by the level the caller is actually reading. Merging spelling
+    # variants made every governorate name an alias of its own "X المدينة"
+    # delegation, so نابل now matches two rows; in the governorates field it
+    # unambiguously means the governorate.
+    if prefer_level:
+        levelled = [m for m in matches if m.get("level") == prefer_level]
+        if len(levelled) == 1:
+            return levelled[0]
+        if levelled:
+            matches = levelled
+
     if gov_ids:
         scoped = [m for m in matches
                   if m.get("parent_id") in gov_ids or m["id"] in gov_ids]
@@ -270,14 +302,14 @@ def process(doc: dict, registry: dict) -> str:
     # what lets a name like الزهور resolve to the right one of two.
     gov_ids = set()
     for g in parsed.get("governorates") or []:
-        pl = lookup(registry, g)
+        pl = lookup(registry, g, prefer_level="governorate")
         if pl:
             gov_ids.add(pl["id"])
             if pl.get("parent_id"):
                 gov_ids.add(pl["parent_id"])  # e.g. جربة filed as a governorate
 
     for g in parsed.get("governorates") or []:
-        pl = lookup(registry, g)
+        pl = lookup(registry, g, prefer_level="governorate")
         if pl:
             # Accept any level here: STEG sometimes files جربة (a delegation)
             # under governorates. Better linked to the right place than dropped.
@@ -290,7 +322,7 @@ def process(doc: dict, registry: dict) -> str:
             unmatched.append(g)
     for loc in parsed.get("localities") or []:
         raw = loc.get("raw", "")
-        pl = lookup(registry, raw, gov_ids)
+        pl = lookup(registry, raw, gov_ids, prefer_level="delegation")
         if pl:
             links.append({"event_id": event["id"], "place_id": pl["id"],
                           "named_explicitly": True, "raw_name_text": raw})

@@ -65,21 +65,21 @@ def main() -> int:
         # ids can disambiguate locality names that exist in several.
         gov_ids, links, unmatched = set(), [], []
         for g in parsed.get("governorates") or []:
-            pl = P.lookup(registry, g)
+            pl = P.lookup(registry, g, prefer_level="governorate")
             if pl:
                 gov_ids.add(pl["id"])
                 if pl.get("parent_id"):
                     gov_ids.add(pl["parent_id"])
 
         for g in parsed.get("governorates") or []:
-            pl = P.lookup(registry, g)
+            pl = P.lookup(registry, g, prefer_level="governorate")
             if pl:
                 links.append((pl["id"], False, g))
             else:
                 unmatched.append(g)
         for loc in parsed.get("localities") or []:
             raw = loc.get("raw", "")
-            pl = P.lookup(registry, raw, gov_ids)
+            pl = P.lookup(registry, raw, gov_ids, prefer_level="delegation")
             if pl:
                 links.append((pl["id"], True, raw))
             else:
