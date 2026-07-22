@@ -83,6 +83,39 @@ CREATE POLICY anon_insert_reports ON reports
 -- policy denies everything, which is correct: raw_documents holds the text of
 -- announcements that have not been approved.
 
+-- ---------- grants ----------
+-- Policies and grants are different things, and BOTH are required. A policy
+-- decides which ROWS a role may see; a grant decides whether the role may
+-- touch the TABLE at all. Without the grant the policy is never consulted and
+-- PostgREST returns 42501 "permission denied for table places".
+--
+-- Deliberately enumerated rather than "ALL TABLES IN SCHEMA public": a
+-- blanket grant would hand anon raw_documents, which holds unapproved
+-- announcement text, and pipeline_runs. Those two are the whole reason this
+-- file is careful.
+GRANT USAGE ON SCHEMA public TO anon;
+
+GRANT SELECT ON public.events      TO anon;
+GRANT SELECT ON public.event_areas TO anon;
+GRANT SELECT ON public.places      TO anon;
+
+-- INSERT only; no SELECT, so anon can file a report but never read one back.
+-- The sequence grant is required because id is a bigserial and the insert
+-- calls nextval().
+GRANT INSERT ON public.reports TO anon;
+GRANT USAGE, SELECT ON SEQUENCE public.reports_id_seq TO anon;
+
+-- Explicitly NOT granted: raw_documents, pipeline_runs.
+
+-- Supabase ships anon with REFERENCES, TRIGGER and TRUNCATE on every table in
+-- public, including raw_documents. RLS does NOT restrict TRUNCATE — row
+-- policies govern SELECT/INSERT/UPDATE/DELETE only — so that privilege would
+-- let the role empty a table outright, RLS notwithstanding. PostgREST does not
+-- expose TRUNCATE, so it is not reachable with the publishable key today; it
+-- is removed because nothing in this app needs it and the blast radius if it
+-- ever became reachable is the entire archive.
+REVOKE TRUNCATE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA public FROM anon;
+
 -- ---------- verify ----------
 SELECT relname AS table_name, relrowsecurity AS rls_enabled
 FROM pg_class
@@ -96,3 +129,11 @@ SELECT tablename, policyname, cmd, roles
 FROM pg_policies
 WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
+
+-- What anon may actually touch. Expect SELECT on events, event_areas and
+-- places, and INSERT on reports — nothing more. Any row naming
+-- raw_documents or pipeline_runs here is a leak.
+SELECT table_name, privilege_type
+FROM information_schema.role_table_grants
+WHERE grantee = 'anon' AND table_schema = 'public'
+ORDER BY table_name, privilege_type;
