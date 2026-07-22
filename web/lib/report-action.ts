@@ -65,7 +65,7 @@ export async function submitReport(input: {
       device_hash: `eq.${device}`,
       kind: `eq.${kind}`,
       place_id: `eq.${placeId}`,
-      created_at: `gte.${since}`,
+      reported_at: `gte.${since}`,
       limit: "1",
     });
     if (recent.length > 0) {
@@ -95,7 +95,10 @@ export async function submitReport(input: {
       select: "id",
       place_id: `eq.${placeId}`,
       kind: `eq.${kind}`,
-      created_at: `gte.${window90}`,
+      reported_at: `gte.${window90}`,
+      // Respect the moderation flag the schema already provides: a report
+      // someone has flagged should not inflate the count others are shown.
+      is_flagged: "eq.false",
       limit: "500",
     });
 
