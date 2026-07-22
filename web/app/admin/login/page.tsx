@@ -1,5 +1,8 @@
 "use client";
 
+// Note: the noindex for /admin/login is set in app/admin/login/layout.tsx,
+// because a "use client" page cannot export metadata.
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 

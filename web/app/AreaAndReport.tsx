@@ -1,17 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Zap, Droplets } from "lucide-react";
 import { submitReport, type ReportKind } from "@/lib/report-action";
 import type { PublicPlace } from "@/lib/public-db";
+import { T, STR, type Lang } from "@/lib/theme";
 
 const AREA_KEY = "qassan.area";
 const DEVICE_KEY = "qassan.device";
 
 /**
- * "My area" lives in localStorage on the user's own device. That is allowed
- * here — this is a public web app, not an artifact — and it is what keeps the
- * product anonymous: the server is never told which area a device watches,
- * only that a report was made for one.
+ * "My area" lives in localStorage on the user's own device. That is what keeps
+ * the product anonymous: the server is never told which area a device watches,
+ * only that a report was filed for one.
  */
 function loadDeviceId(): string {
   let id = localStorage.getItem(DEVICE_KEY);
@@ -22,157 +23,119 @@ function loadDeviceId(): string {
   return id;
 }
 
-export default function AreaAndReport({ places }: { places: PublicPlace[] }) {
+export default function AreaAndReport({
+  places, lang, onAreaChange, selectedId,
+}: {
+  places: PublicPlace[];
+  lang: Lang;
+  onAreaChange: (id: number | null) => void;
+  selectedId: number | null;
+}) {
+  const s = STR[lang];
   const governorates = places.filter((p) => p.level === "governorate");
   const [govId, setGovId] = useState<number | null>(null);
-  const [placeId, setPlaceId] = useState<number | null>(null);
-  const [pendingKind, setPendingKind] = useState<ReportKind | null>(null);
+  const [pending, setPending] = useState<{ kind: ReportKind; utility: "electricity" | "water" } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [neighbours, setNeighbours] = useState<number | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem(AREA_KEY);
-    if (!saved) return;
-    const id = Number(saved);
-    const place = places.find((p) => p.id === id);
-    if (place) {
-      setPlaceId(place.id);
-      setGovId(place.parent_id ?? place.id);
-    }
-  }, [places]);
+    if (!selectedId) return;
+    const place = places.find((p) => p.id === selectedId);
+    if (place) setGovId(place.parent_id ?? place.id);
+  }, [selectedId, places]);
 
   const delegations = govId
     ? places.filter((p) => p.parent_id === govId && p.level !== "governorate")
     : [];
-  const chosen = places.find((p) => p.id === placeId) ?? null;
+  const chosen = places.find((p) => p.id === selectedId) ?? null;
 
   function chooseArea(id: number) {
-    setPlaceId(id);
-    setMessage(null);
-    setNeighbours(null);
     localStorage.setItem(AREA_KEY, String(id));
+    onAreaChange(id);
+    setMessage(null);
   }
 
-  async function confirmAndSend(kind: ReportKind) {
-    if (!chosen) return;
+  async function send() {
+    if (!chosen || !pending) return;
     setBusy(true);
-    setMessage(null);
     try {
       const res = await submitReport({
         deviceId: loadDeviceId(),
         placeId: chosen.id,
-        utility: "electricity",
-        kind,
-        // The user answered "yes, this is my area" on the confirm step. A fact
-        // about their answer — not their location.
+        utility: pending.utility,
+        kind: pending.kind,
+        // The user answered "yes, this is my area" — a fact about their answer,
+        // not about where they physically are. No location is sent.
         areaConfirmed: true,
       });
-      if (res.ok) {
-        setNeighbours(res.neighbours);
-        setMessage(
-          kind === "cut" ? "شكرا، سجّلنا التبليغ." : "شكرا، سجّلنا رجوع الضو."
-        );
-      } else {
-        setMessage(res.message);
-      }
+      setMessage(res.ok
+        ? (pending.kind === "cut" ? "✓" : "✓") + " " + (lang === "ar" ? "شكرا، وصل بلاغك" : "Merci, signalement reçu")
+        : res.message);
     } finally {
       setBusy(false);
-      setPendingKind(null);
+      setPending(null);
     }
   }
 
-  return (
-    <section className="card area-card">
-      <h2>منطقتي</h2>
+  const selectStyle = {
+    background: T.night, color: T.text, border: `1px solid ${T.line}`,
+  } as const;
 
-      <div className="pickers">
-        <select
-          value={govId ?? ""}
-          onChange={(e) => {
-            const v = e.target.value ? Number(e.target.value) : null;
-            setGovId(v);
-            setPlaceId(null);
-          }}
-          aria-label="الولاية"
-        >
-          <option value="">اختر الولاية…</option>
-          {governorates.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name_ar}
-            </option>
-          ))}
+  return (
+    <div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <select value={govId ?? ""} aria-label={s.govLabel}
+                onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setGovId(v); onAreaChange(null); }}
+                className="w-full rounded-lg px-3 py-2.5 text-sm" style={selectStyle}>
+          <option value="">{s.govLabel}…</option>
+          {governorates.map((g) => <option key={g.id} value={g.id}>{g.name_ar}</option>)}
         </select>
 
-        <select
-          value={placeId ?? ""}
-          onChange={(e) => e.target.value && chooseArea(Number(e.target.value))}
-          disabled={!govId}
-          aria-label="المعتمدية"
-        >
-          <option value="">
-            {govId ? "اختر المعتمدية…" : "اختر الولاية أولا"}
-          </option>
-          {delegations.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name_ar}
-            </option>
-          ))}
+        <select value={selectedId ?? ""} disabled={!govId} aria-label={s.cityLabel}
+                onChange={(e) => e.target.value && chooseArea(Number(e.target.value))}
+                className="w-full rounded-lg px-3 py-2.5 text-sm disabled:opacity-50" style={selectStyle}>
+          <option value="">{govId ? `${s.cityLabel}…` : s.govLabel}</option>
+          {delegations.map((d) => <option key={d.id} value={d.id}>{d.name_ar}</option>)}
         </select>
       </div>
 
       {chosen && (
-        <>
-          {pendingKind ? (
-            /* The explicit area confirmation that replaced geolocation:
-               a deliberate answer, storing nothing about where anyone is. */
-            <div className="confirm-step">
-              <p>
-                تبليغ عن <strong>{chosen.name_ar}</strong> —{" "}
-                {pendingKind === "cut" ? "الضو مقصوص" : "رجع الضو"}؟
+        <div className="mt-3">
+          {pending ? (
+            <div className="rounded-xl p-3" style={{ background: T.surface2, border: `1px solid ${T.line}` }}>
+              <p className="text-sm mb-2">
+                {chosen.name_ar} — {pending.kind === "cut" ? s.reportCut : s.reportBack}؟
               </p>
-              <div className="report-row">
-                <button
-                  className="approve"
-                  disabled={busy}
-                  onClick={() => confirmAndSend(pendingKind)}
-                >
-                  {busy ? "…" : "نعم، أكّد"}
+              <div className="flex gap-2">
+                <button onClick={send} disabled={busy}
+                        className="flex-1 rounded-lg py-2.5 text-sm font-bold"
+                        style={{ background: T.ok, color: "#06301b" }}>
+                  {busy ? "…" : lang === "ar" ? "نعم، أكّد" : "Confirmer"}
                 </button>
-                <button
-                  className="ghost"
-                  disabled={busy}
-                  onClick={() => setPendingKind(null)}
-                >
-                  إلغاء
+                <button onClick={() => setPending(null)} disabled={busy}
+                        className="rounded-lg px-4 py-2.5 text-sm"
+                        style={{ background: "transparent", border: `1px solid ${T.line}`, color: T.muted }}>
+                  {lang === "ar" ? "إلغاء" : "Annuler"}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="report-row">
-              <button className="report out" onClick={() => setPendingKind("cut")}>
-                الضو مقصوص توّا
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => setPending({ kind: "cut", utility: "electricity" })}
+                      className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
+                      style={{ background: T.amber, color: "#1a1205" }}>
+                <Zap size={15} /> {s.reportCut}
               </button>
-              <button
-                className="report back"
-                onClick={() => setPendingKind("restored")}
-              >
-                رجع الضو
+              <button onClick={() => setPending({ kind: "restored", utility: "electricity" })}
+                      className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
+                      style={{ background: T.ok, color: "#06301b" }}>
+                <Droplets size={15} style={{ opacity: 0 }} /> {s.reportBack}
               </button>
             </div>
           )}
-
-          {message && <p className="report-msg">{message}</p>}
-
-          {neighbours !== null && (
-            <p className="muted small">
-              {neighbours <= 1
-                ? "كن أول من يأكد في منطقتك."
-                : `${neighbours} تبليغات في منطقتك خلال آخر ساعة ونصف.`}
-            </p>
-          )}
-        </>
+          {message && <p className="text-xs mt-2" style={{ color: T.ok }}>{message}</p>}
+        </div>
       )}
-    </section>
+    </div>
   );
 }

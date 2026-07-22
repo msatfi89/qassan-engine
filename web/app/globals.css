@@ -1,15 +1,34 @@
-/* Dark night-blue theme, matching design-reference-app.jsx, which Med
-   approved. The public app in Task 3 will build on these same tokens. */
+@import "tailwindcss";
+
+/* Tokens taken verbatim from design-reference-app.jsx, the design Med
+   approved. The earlier values here were approximations I chose before
+   reading that file; they have been replaced rather than blended, because a
+   palette that is nearly the approved one is just a different palette. */
 :root {
-  --bg: #0b1220;
-  --surface: #131c2e;
-  --border: #24304a;
-  --text: #e8edf7;
-  --muted: #93a1bd;
-  --amber: #f5a524; /* electricity */
-  --aqua: #22b8cf;  /* water */
-  --ok: #38b26a;
+  --bg: #0e1720;      /* T.night */
+  --surface: #16222e; /* T.surface */
+  --surface2: #1c2a38;
+  --border: #243646;  /* T.line */
+  --text: #eaf1f7;
+  --muted: #8ca1b3;
+  --amber: #ffb637;   /* electricity */
+  --amber-dim: #8a6320;
+  --aqua: #3ec8da;    /* water */
+  --live: #ff6a55;    /* happening now */
+  --ok: #5bd08f;
   --error: #e5484d;
+}
+
+@theme inline {
+  --color-night: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-line: var(--border);
+  --color-amber: var(--amber);
+  --color-aqua: var(--aqua);
+  --color-live: var(--live);
+  --color-muted: var(--muted);
+  --color-ink: var(--text);
 }
 
 * { box-sizing: border-box; }

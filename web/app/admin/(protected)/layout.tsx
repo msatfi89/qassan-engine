@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
+
+// The site-wide noindex was removed when the public app launched. The
+// dashboard keeps its own, so the approval queue cannot be indexed.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 // Node runtime: session.ts uses node:crypto, which Edge does not provide.
 export const runtime = "nodejs";

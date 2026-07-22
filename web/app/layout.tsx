@@ -7,10 +7,10 @@ export const metadata: Metadata = {
   // the package name) deliberately keep "qassan": renaming them would sign
   // Med out and orphan every stored area and device id.
   title: "9assan",
-  description: "Tunisian power and water outage tracker",
-  // The dashboard is private and the public app is not launched; keep both
-  // out of search results until Med decides otherwise.
-  robots: { index: false, follow: false },
+  description: "متتبّع انقطاع الكهرباء والماء في تونس — 9assan",
+  // The public app is launching, so the site-wide noindex is gone. /admin
+  // re-adds it for itself: removing it here without that would have put the
+  // approval dashboard into Google.
 };
 
 export default function RootLayout({

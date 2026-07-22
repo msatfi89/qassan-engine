@@ -1,0 +1,107 @@
+/**
+ * Design tokens copied verbatim from qassan-phase2/design-reference-app.jsx,
+ * which Med approved. Values are not adjusted "to taste": the reference is the
+ * agreed design, and drifting from it by a few hex digits is how an approved
+ * look quietly becomes a different one.
+ */
+export const T = {
+  night: "#0E1720",
+  surface: "#16222E",
+  surface2: "#1C2A38",
+  line: "#243646",
+  amber: "#FFB637", // electricity
+  amberDim: "#8A6320", // a cut window already in the past
+  aqua: "#3EC8DA", // water
+  live: "#FF6A55", // happening right now
+  text: "#EAF1F7",
+  muted: "#8CA1B3",
+  ok: "#5BD08F",
+} as const;
+
+export type Lang = "ar" | "fr";
+
+/** Arabic first, French second — the reference's order, and Tunisia's. */
+export const STR = {
+  ar: {
+    appName: "قصّان",
+    tagline: "الضو والماء في تونس — لحظة بلحظة",
+    myArea: "منطقتي",
+    pickArea: "اختر منطقتك",
+    govLabel: "الولاية",
+    cityLabel: "المدينة / المعتمدية",
+    cityNamed: "منطقتك مذكورة بالاسم في البلاغ",
+    govOnly: "ولايتك معنيّة — منطقتك بالتحديد غير مؤكدة",
+    liveNow: "جاري الآن",
+    cutNow: "مقصوص توّا",
+    poweredNow: "الضو موجود",
+    nextCut: "أقرب قطع محتمل",
+    noArea: "منطقتك ما ظهرتش في البلاغات — نراقبو ونعلموك",
+    today: "اليوم",
+    all: "الكل",
+    elec: "الضو",
+    water: "الماء",
+    planned: "مبرمج",
+    sudden: "عطب فجئي",
+    endsUnknown: "بدون توقيت رجوع رسمي",
+    source: "المصدر",
+    timeline: "خط النهار — منطقتك",
+    areas: "المناطق المذكورة",
+    reports: "بلاغات السكان",
+    reportCut: "الضو مقصوص توّا",
+    reportBack: "رجع الضو",
+    confirmed: "أكّدو",
+    beFirst: "كن أول من يأكد",
+    whyTitle: "علاش يقصّو الضو؟",
+    whyBody:
+      "وقت الذروة الطلب على الكهرباء يتجاوز قدرة الإنتاج، فيقع قطع دوري بالتداول باش ما تنهارش الشبكة الكل.",
+    hotline: "رقم الستاغ للطوارئ: 71.239.222",
+    sources: "المصادر: بلاغات الستاغ والصوناد + الصحافة التونسية",
+    beta: "نسخة تجريبية",
+    useMyLocation: "حدّد موقعي",
+    locating: "جاري التحديد…",
+    locationDenied: "ما نجّمناش نحدّدو موقعك — اختر منطقتك يدويا",
+    ended: "انتهى",
+    upcoming: "قادم",
+  },
+  fr: {
+    appName: "9assan",
+    tagline: "Électricité & eau en Tunisie — en temps réel",
+    myArea: "Ma zone",
+    pickArea: "Choisir ma zone",
+    govLabel: "Gouvernorat",
+    cityLabel: "Ville / délégation",
+    cityNamed: "Votre zone est citée nommément dans le communiqué",
+    govOnly: "Gouvernorat concerné — votre zone exacte non confirmée",
+    liveNow: "En cours",
+    cutNow: "Coupé maintenant",
+    poweredNow: "Courant disponible",
+    nextCut: "Prochaine coupure probable",
+    noArea: "Votre zone n'apparaît pas — on surveille pour vous",
+    today: "Aujourd'hui",
+    all: "Tout",
+    elec: "Électricité",
+    water: "Eau",
+    planned: "Programmée",
+    sudden: "Panne soudaine",
+    endsUnknown: "Retour sans préavis officiel",
+    source: "Source",
+    timeline: "Votre journée",
+    areas: "Zones citées",
+    reports: "Signalements citoyens",
+    reportCut: "Coupé chez moi",
+    reportBack: "Le courant est revenu",
+    confirmed: "confirmé par",
+    beFirst: "Soyez le premier à confirmer",
+    whyTitle: "Pourquoi ces coupures ?",
+    whyBody:
+      "Au pic, la demande dépasse la capacité de production — d'où le délestage tournant pour éviter l'effondrement du réseau.",
+    hotline: "Urgences STEG : 71.239.222",
+    sources: "Sources : communiqués STEG & SONEDE + presse tunisienne",
+    beta: "Bêta",
+    useMyLocation: "Me localiser",
+    locating: "Localisation…",
+    locationDenied: "Localisation impossible — choisissez votre zone",
+    ended: "Terminé",
+    upcoming: "À venir",
+  },
+} as const;
