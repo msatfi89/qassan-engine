@@ -71,7 +71,7 @@ export default function AreaAndReport({ places }: { places: PublicPlace[] }) {
       if (res.ok) {
         setNeighbours(res.neighbours);
         setMessage(
-          kind === "out" ? "شكرا، سجّلنا التبليغ." : "شكرا، سجّلنا رجوع الضو."
+          kind === "cut" ? "شكرا، سجّلنا التبليغ." : "شكرا، سجّلنا رجوع الضو."
         );
       } else {
         setMessage(res.message);
@@ -129,7 +129,7 @@ export default function AreaAndReport({ places }: { places: PublicPlace[] }) {
             <div className="confirm-step">
               <p>
                 تبليغ عن <strong>{chosen.name_ar}</strong> —{" "}
-                {pendingKind === "out" ? "الضو مقصوص" : "رجع الضو"}؟
+                {pendingKind === "cut" ? "الضو مقصوص" : "رجع الضو"}؟
               </p>
               <div className="report-row">
                 <button
@@ -150,10 +150,13 @@ export default function AreaAndReport({ places }: { places: PublicPlace[] }) {
             </div>
           ) : (
             <div className="report-row">
-              <button className="report out" onClick={() => setPendingKind("out")}>
+              <button className="report out" onClick={() => setPendingKind("cut")}>
                 الضو مقصوص توّا
               </button>
-              <button className="report back" onClick={() => setPendingKind("back")}>
+              <button
+                className="report back"
+                onClick={() => setPendingKind("restored")}
+              >
                 رجع الضو
               </button>
             </div>

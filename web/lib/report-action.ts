@@ -31,7 +31,8 @@ function hashDevice(raw: string): string {
   return createHash("sha256").update(`${pepper}:${raw}`).digest("hex");
 }
 
-export type ReportKind = "out" | "back";
+/** Values fixed by reports_kind_check in the database, not chosen here. */
+export type ReportKind = "cut" | "restored";
 export type ReportResult =
   | { ok: true; neighbours: number }
   | { ok: false; reason: "rate_limited" | "bad_input" | "failed"; message: string };
@@ -51,7 +52,7 @@ export async function submitReport(input: {
     !Number.isInteger(placeId) ||
     placeId <= 0 ||
     (utility !== "electricity" && utility !== "water") ||
-    (kind !== "out" && kind !== "back")
+    (kind !== "cut" && kind !== "restored")
   ) {
     return { ok: false, reason: "bad_input", message: "طلب غير صالح" };
   }
