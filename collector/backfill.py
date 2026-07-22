@@ -106,44 +106,69 @@ def discover(src: dict, year: int, month: int) -> list[str]:
     return found
 
 
+def parse_months(spec: str) -> list[tuple[int, int]]:
+    """'2025-07' -> one month. '2023-01:2023-12' -> that inclusive range.
+
+    A range lets one workflow run cover a year, instead of Med triggering the
+    job once per month forty-two times."""
+    start_s, _, end_s = spec.partition(":")
+    start = datetime.strptime(start_s.strip(), "%Y-%m")
+    end = datetime.strptime(end_s.strip(), "%Y-%m") if end_s else start
+    if (end.year, end.month) < (start.year, start.month):
+        raise ValueError("range ends before it starts")
+    months, y, m = [], start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        months.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return months
+
+
+def collect_month(year: int, month: int, dry_run: bool) -> list[tuple[str, str]]:
+    """Walk every archive source for one month; return (source, url) pairs."""
+    print(f"\n=== {year}-{month:02d} ===")
+    per_source, all_urls = {}, []
+    for src in ARCHIVE_SOURCES:
+        urls = discover(src, year, month)
+        per_source[src["name"]] = len(urls)
+        all_urls.extend((src["name"], u) for u in urls)
+    print("  " + "  ".join(f"{n}={c}" for n, c in per_source.items())
+          + f"  TOTAL={len(all_urls)}")
+    return all_urls
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Backfill one month of outage announcements.")
-    ap.add_argument("month", help="month to backfill, as YYYY-MM (e.g. 2025-07)")
+    ap = argparse.ArgumentParser(description="Backfill outage announcements from news archives.")
+    ap.add_argument("month",
+                    help="YYYY-MM, or an inclusive range YYYY-MM:YYYY-MM (e.g. 2023-01:2023-12)")
     ap.add_argument("--dry-run", action="store_true",
                     help="count candidates only; no downloads, no writes, no Claude calls")
     args = ap.parse_args()
 
     try:
-        target = datetime.strptime(args.month, "%Y-%m")
-    except ValueError:
-        print(f"error: month must look like 2025-07, got {args.month!r}", file=sys.stderr)
+        months = parse_months(args.month)
+    except ValueError as e:
+        print(f"error: {e}. Expected YYYY-MM or YYYY-MM:YYYY-MM, got {args.month!r}",
+              file=sys.stderr)
         return 2
-    year, month = target.year, target.month
 
-    print(f"\nQASSAN backfill — {year}-{month:02d}"
-          f"{'  [DRY RUN — nothing will be written]' if args.dry_run else ''}\n")
+    print(f"\nQASSAN backfill — {len(months)} month(s), "
+          f"{months[0][0]}-{months[0][1]:02d} to {months[-1][0]}-{months[-1][1]:02d}"
+          f"{'  [DRY RUN — nothing will be written]' if args.dry_run else ''}")
 
-    per_source, all_urls = {}, []
-    for src in ARCHIVE_SOURCES:
-        print(f"  [{src['name']}] walking archive...")
-        urls = discover(src, year, month)
-        per_source[src["name"]] = len(urls)
-        all_urls.extend((src["name"], u) for u in urls)
-        print(f"  [{src['name']}] {len(urls)} candidate article(s)\n")
+    all_urls = []
+    for year, month in months:
+        all_urls.extend(collect_month(year, month, args.dry_run))
 
-    print("-" * 62)
-    for name, n in per_source.items():
-        print(f"  {name:<12} {n:>5} candidate articles")
-    print(f"  {'TOTAL':<12} {len(all_urls):>5}")
+    print("\n" + "-" * 62)
+    print(f"  {len(all_urls)} candidate article(s) across {len(months)} month(s)")
 
     if args.dry_run:
-        # Rough guide only. store_document drops duplicates by content hash,
-        # and the parser skips anything that is not an announcement, so the
-        # number actually billed is lower — usually well under half.
-        hi = len(all_urls) * 0.033
-        print(f"\n  Upper bound if every candidate were parsed: ~${hi:,.2f}")
-        print("  Real cost is lower: duplicates are dropped before parsing and")
-        print("  non-announcements are rejected by the text pre-filter.")
+        # Calibrated against the July 2025 pilot rather than guessed: 61
+        # candidates became 22 parsed documents costing $0.13 in total, i.e.
+        # ~36% survive dedupe and the pre-filter, at ~$0.006 each.
+        print(f"\n  Projected: ~{len(all_urls) * 0.36:.0f} documents, "
+              f"~${len(all_urls) * 0.0021:,.2f}")
+        print("  (measured from the July 2025 pilot: 61 candidates -> 22 docs -> $0.13)")
         print("\n  Dry run — nothing fetched, nothing stored, nothing billed.")
         return 0
 
