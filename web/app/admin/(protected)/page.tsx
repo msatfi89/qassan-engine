@@ -1,6 +1,7 @@
 import { isConfigured } from "@/lib/supabase";
 import { fetchPendingEvents, splitByConfidence, BULK_THRESHOLD } from "@/lib/queue";
 import EventCard from "./EventCard";
+import BulkApprove from "./BulkApprove";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,11 +65,14 @@ export default async function AdminQueue() {
             reach this tier only once coverage catches up.
           </p>
         ) : (
-          <div className="event-list">
-            {high.map((ev) => (
-              <EventCard key={ev.id} ev={ev} />
-            ))}
-          </div>
+          <>
+            <BulkApprove ids={high.map((ev) => ev.id)} />
+            <div className="event-list">
+              {high.map((ev) => (
+                <EventCard key={ev.id} ev={ev} />
+              ))}
+            </div>
+          </>
         )}
       </section>
 

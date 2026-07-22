@@ -1,9 +1,19 @@
 import Link from "next/link";
 import type { QueueEvent } from "@/lib/queue";
 import { unmatchedNames } from "@/lib/queue";
+import Decide from "./Decide";
 
 /** Tunisia is UTC+1 year-round. Render in local time, never in the viewer's. */
 const TZ = "Africa/Tunis";
+
+/** Judge direction by the dominant script: the collector marks a document
+ *  "ar" if it holds a single Arabic character, which is true of French
+ *  bulletins that merely name Tunisian places. */
+function textDirection(text: string): "rtl" | "ltr" {
+  const arabic = (text.match(/[؀-ۿ]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-zÀ-ÿ]/g) ?? []).length;
+  return arabic >= latin ? "rtl" : "ltr";
+}
 
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
@@ -37,6 +47,8 @@ export default function EventCard({ ev }: { ev: QueueEvent }) {
   const end = fmtTime(ev.ends_at);
   const doc = ev.raw_documents;
   const reasons = doc?.parsed_json?.confidence_reasons ?? [];
+  const rawText = doc?.raw_text ?? "";
+  const dir = textDirection(rawText);
 
   return (
     <article className="event">
@@ -128,6 +140,20 @@ export default function EventCard({ ev }: { ev: QueueEvent }) {
           قارن بالنص الأصلي →
         </Link>
       </div>
+
+      {/* Inline and collapsed by default: approving on a phone should not
+          require leaving the queue, but 60k characters cannot be open on
+          every card at once. */}
+      {rawText && (
+        <details className="rawpeek">
+          <summary>النص الأصلي / original text</summary>
+          <div className="rawtext" dir={dir} lang={doc?.language ?? "ar"}>
+            {rawText}
+          </div>
+        </details>
+      )}
+
+      <Decide eventId={ev.id} />
     </article>
   );
 }

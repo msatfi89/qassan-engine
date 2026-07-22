@@ -282,3 +282,53 @@ mark.hl.unknown {
 }
 
 .foot-note { margin-top: 18px; }
+
+/* ---------- approve / reject ---------- */
+.decide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.decide button, .bulkbar button { padding: 7px 14px; font-size: 0.88rem; }
+button.approve { background: var(--ok); color: #062512; }
+button.reject {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 400;
+}
+button.reject.confirm { background: var(--error); color: #2a0709; border: none; font-weight: 600; }
+button.ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 400;
+}
+.decided { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--border); }
+
+.bulkbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(56, 178, 106, 0.08);
+  border: 1px solid var(--ok);
+  border-radius: 10px;
+  font-size: 0.9rem;
+}
+
+/* Collapsed by default — 60k characters cannot be open on every card. */
+.rawpeek { margin-top: 12px; }
+.rawpeek summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding: 4px 0;
+}
+.rawpeek .rawtext { margin-top: 8px; max-height: 40vh; }

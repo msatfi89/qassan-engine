@@ -39,3 +39,30 @@ export async function sbGet<T>(
   }
   return res.json() as Promise<T>;
 }
+
+/** PATCH against PostgREST. Returns the updated rows. */
+export async function sbPatch<T>(
+  path: string,
+  params: Record<string, string>,
+  body: Record<string, unknown>
+): Promise<T> {
+  const { url, key } = config();
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${url}/rest/v1/${path}?${qs}`, {
+    method: "PATCH",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(
+      `PATCH ${path} -> ${res.status}: ${(await res.text()).slice(0, 300)}`
+    );
+  }
+  return res.json() as Promise<T>;
+}

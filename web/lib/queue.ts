@@ -15,6 +15,7 @@ export type SourceDoc = {
   source_name: string;
   source_url: string;
   language: string | null;
+  raw_text?: string | null;
   parsed_json: {
     localities?: { raw?: string }[];
     governorates?: string[];
@@ -46,9 +47,11 @@ const SELECT = [
   "id,utility,event_kind,starts_at,ends_at,end_time_official,cause_text",
   "extraction_confidence,approval_status,backfilled",
   "event_areas(place_id,named_explicitly,raw_name_text,places(name_ar,level))",
-  // raw_text is deliberately absent: 60k characters per row would make the
-  // queue enormous. The side-by-side comparison view fetches it per event.
-  "raw_documents(id,source_name,source_url,language,parsed_json)",
+  // raw_text is included so each card can expand it inline: approving on a
+  // phone should not require leaving the queue. The column is capped at 60k
+  // characters, but real announcements measure ~1.7k, so a full queue is
+  // ~100KB rather than the megabytes the cap suggests.
+  "raw_documents(id,source_name,source_url,language,parsed_json,raw_text)",
 ].join(",");
 
 /** One event with the full announcement text, for the comparison view. */
