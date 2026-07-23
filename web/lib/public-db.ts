@@ -89,14 +89,16 @@ export async function fetchPlaces(): Promise<PublicPlace[]> {
  * service key still never leaves the server.
  */
 export type UtilityCounts = { cut: number; restored: number };
-export type PlaceReportCounts = { electricity: UtilityCounts; water: UtilityCounts };
+export type PlaceReportCounts = {
+  electricity: UtilityCounts; water: UtilityCounts; lastAt: string | null;
+};
 
 export async function fetchReportCounts(
   windowMinutes = 90
 ): Promise<Record<number, PlaceReportCounts>> {
   const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
-  const rows = await sbGet<{ place_id: number | null; kind: string; utility: string }[]>("reports", {
-    select: "place_id,kind,utility",
+  const rows = await sbGet<{ place_id: number | null; kind: string; utility: string; reported_at: string }[]>("reports", {
+    select: "place_id,kind,utility,reported_at",
     reported_at: `gte.${since}`,
     is_flagged: "eq.false",
     limit: "5000",
@@ -104,14 +106,16 @@ export async function fetchReportCounts(
   const empty = (): PlaceReportCounts => ({
     electricity: { cut: 0, restored: 0 },
     water: { cut: 0, restored: 0 },
+    lastAt: null,
   });
   const out: Record<number, PlaceReportCounts> = {};
   for (const r of rows) {
     if (r.place_id == null) continue;
     const u = r.utility === "water" ? "water" : "electricity";
-    (out[r.place_id] ??= empty());
-    if (r.kind === "cut") out[r.place_id][u].cut += 1;
-    else if (r.kind === "restored") out[r.place_id][u].restored += 1;
+    const rec = (out[r.place_id] ??= empty());
+    if (r.kind === "cut") rec[u].cut += 1;
+    else if (r.kind === "restored") rec[u].restored += 1;
+    if (!rec.lastAt || r.reported_at > rec.lastAt) rec.lastAt = r.reported_at;
   }
   return out;
 }
@@ -145,6 +149,16 @@ export function dedupeForDisplay(events: PublicEvent[]): PublicEvent[] {
     }
   }
   return [...kept, ...groups.values()];
+}
+
+/** Count of unflagged reports in the last 24h (for the Stats tab). Uses the
+ *  service key: anon is INSERT-only on reports and cannot read them. */
+export async function fetchReportCount24h(): Promise<number> {
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const rows = await sbGet<{ id: number }[]>("reports", {
+    select: "id", reported_at: `gte.${since}`, is_flagged: "eq.false", limit: "10000",
+  });
+  return rows.length;
 }
 
 export async function fetchApprovedEvents(): Promise<PublicEvent[]> {

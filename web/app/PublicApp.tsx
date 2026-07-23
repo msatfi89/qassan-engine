@@ -6,8 +6,12 @@ import { T, STR, type Lang } from "@/lib/theme";
 import { computeStatus, feedOrder, type StatusResult } from "@/lib/status";
 import { governorateAt } from "@/lib/geo";
 import type { PublicEvent, PublicPlace, PlaceReportCounts } from "@/lib/public-db";
+import { Sun, Moon } from "lucide-react";
 import AreaAndReport from "./AreaAndReport";
 import TunisiaMap, { type MapDatum, type ShapeInfo } from "./TunisiaMap";
+import BottomNav from "./BottomNav";
+import AreasTab, { type AreaRow, type AreaStatus } from "./AreasTab";
+import StatsTab, { type Stats } from "./StatsTab";
 
 /** How far back the front page looks. The archive stays in the database and
  *  keeps its value; it just does not belong on a page answering "is my power
@@ -16,7 +20,10 @@ const FEED_WINDOW_HOURS = 48;
 
 const LANG_KEY = "qassan.lang";
 const AREA_KEY = "qassan.area";
+const THEME_KEY = "qassan.theme";
 const TZ = "Africa/Tunis";
+
+export type TabKey = "home" | "map" | "report" | "areas" | "stats";
 
 type Ev = PublicEvent & { _status: StatusResult };
 
@@ -178,7 +185,7 @@ function EventCard({ ev, lang }: { ev: Ev; lang: Lang }) {
          }}>
       <div className="flex items-start gap-3">
         <div className="mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-             style={{ background: `${observation ? T.observed : water ? T.aqua : T.amber}1A` }}>
+             style={{ background: `color-mix(in srgb, ${observation ? T.observed : water ? T.aqua : T.amber} 12%, transparent)` }}>
           {water ? <Droplets size={18} color={observation ? T.observed : T.aqua} />
                  : <Zap size={18} color={observation ? T.observed : T.amber}
                         fill={observation ? "none" : T.amber} />}
@@ -247,13 +254,16 @@ function EventCard({ ev, lang }: { ev: Ev; lang: Lang }) {
 
 /* ---------- the app ---------- */
 export default function PublicApp({
-  events, places, reportCounts,
+  events, places, reportCounts, reports24,
 }: {
   events: PublicEvent[];
   places: PublicPlace[];
   reportCounts: Record<number, PlaceReportCounts>;
+  reports24: number;
 }) {
   const [lang, setLang] = useState<Lang>("ar");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [areaId, setAreaId] = useState<number | null>(null);
   const [tab, setTab] = useState<"all" | "electricity" | "water">("all");
   const [govFilter, setGovFilter] = useState<string | null>(null);
@@ -300,7 +310,16 @@ export default function PublicApp({
     if (saved === "ar" || saved === "fr") setLang(saved);
     const a = Number(localStorage.getItem(AREA_KEY));
     if (a) setAreaId(a);
+    const th = localStorage.getItem(THEME_KEY);
+    if (th === "light" || th === "dark") setTheme(th);
   }, []);
+
+  // Drive data-theme on <html> so the CSS variables (and thus every T.* token)
+  // swap. Dark stays the default and the stored preference.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
 
   // Zoom the map to the chosen area's governorate whenever an area is picked
   // (including one restored from localStorage on load). Without this the map
@@ -527,8 +546,49 @@ export default function PublicApp({
     return [...names];
   }, [recent, govFilter, govNameOf, tree, lang]);
 
+  // Rows for the Areas tab: one per delegation, with honest per-utility status.
+  // "cut" = live outage; "on" = an announced cut not yet started (so power is
+  // on now); "nodata" = we have nothing, stated plainly, never guessed.
+  const areaRows: AreaRow[] = useMemo(() => {
+    const status = (live: boolean, up: boolean): AreaStatus => live ? "cut" : up ? "on" : "nodata";
+    return places.filter((p) => p.level === "delegation").map((d) => {
+      const dd = delData[d.id];
+      // roll reports up from the delegation's neighborhoods
+      let rep = 0, last: string | null = null;
+      for (const id of [d.id, ...tree.descendants(d.id)]) {
+        const c = reportCounts[id];
+        if (!c) continue;
+        rep += c.electricity.cut + c.water.cut;
+        if (c.lastAt && (!last || c.lastAt > last)) last = c.lastAt;
+      }
+      return {
+        id: d.id,
+        name: lang === "fr" && d.name_fr ? d.name_fr : d.name_ar,
+        gov: localizeGov(tree.govNameOf(d.id) ?? ""),
+        elec: status(!!dd?.liveElectric, !!dd?.upcoming),
+        water: status(!!dd?.liveWater, !!dd?.upcomingWater),
+        reports: rep, lastAt: last,
+      };
+    });
+  }, [places, delData, reportCounts, tree, lang, localizeGov]);
+
+  const stats: Stats = useMemo(() => ({
+    activeElec: withStatus.filter((e) => e.is_official && e._status.status === "live" && e.utility === "electricity").length,
+    activeWater: withStatus.filter((e) => e.is_official && e._status.status === "live" && e.utility === "water").length,
+    upcoming: withStatus.filter((e) => e.is_official && e._status.status === "upcoming").length,
+    reports24,
+    approved: events.length,
+  }), [withStatus, events, reports24]);
+
+  const pickFromList = (id: number) => {
+    setAreaId(id);
+    localStorage.setItem(AREA_KEY, String(id));
+    setActiveTab("home");
+  };
+
   return (
-    <main className="mx-auto w-full max-w-[640px] px-4 pb-16 pt-5" style={{ color: T.text }}>
+    <>
+    <main className="mx-auto w-full max-w-[640px] px-4 pb-28 pt-5" style={{ color: T.text }}>
       <header className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-2xl font-extrabold">
@@ -540,15 +600,24 @@ export default function PublicApp({
           </h1>
           <p className="text-xs mt-0.5" style={{ color: T.muted }}>{s.tagline}</p>
         </div>
-        <button onClick={() => setLang(rtl ? "fr" : "ar")}
-                className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg"
-                style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
-                aria-label="language">
-          <Languages size={14} /> {rtl ? "FR" : "ع"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className="flex items-center justify-center rounded-lg p-2"
+                  style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
+                  aria-label={s.themeToggle}>
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+          <button onClick={() => setLang(rtl ? "fr" : "ar")}
+                  className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg"
+                  style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
+                  aria-label="language">
+            <Languages size={14} /> {rtl ? "FR" : "ع"}
+          </button>
+        </div>
       </header>
 
-      {/* ---- AREA FIRST: the question people open the app to answer ---- */}
+      {/* ================= HOME ================= */}
+      {activeTab === "home" && (<>
       <section className="rounded-2xl p-4 mb-4"
                style={{ background: T.surface, border: `1px solid ${T.line}` }}>
         <div className="flex items-center gap-2 mb-3">
@@ -605,7 +674,7 @@ export default function PublicApp({
           <p className="text-xs mb-3" style={{ color: T.muted }}>{s.pickArea}</p>
         )}
 
-        <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId} selectedId={areaId} />
+        <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId} selectedId={areaId} showReport={false} />
 
         <button onClick={locateMe} disabled={locating}
                 className="flex items-center gap-1.5 mt-3 text-xs px-3 py-2 rounded-lg"
@@ -619,18 +688,6 @@ export default function PublicApp({
             : "Votre position est calculée sur votre téléphone — rien n'est transmis."}
         </p>
       </section>
-
-      <div className="mb-4">
-        <TunisiaMap govData={mapData} delData={delData} lang={lang}
-                    selected={govFilter} onSelect={setGovFilter}
-                    localizeGov={localizeGov} delName={delName} describe={describe} />
-        {namedInView.length > 0 && (
-          <p className="text-xs mt-2 leading-relaxed px-1" style={{ color: T.muted }}>
-            <span style={{ color: T.amber }}>{s.namedInBulletin}: </span>
-            {namedInView.join("، ")}
-          </p>
-        )}
-      </div>
 
       {area && mine.length > 0 && (
         <div className="mb-4"><DayStrip events={mine} lang={lang} /></div>
@@ -676,6 +733,46 @@ export default function PublicApp({
           feed.map((ev) => <EventCard key={ev.id} ev={ev} lang={lang} />)
         )}
       </div>
+      </>)}
+
+      {/* ================= MAP ================= */}
+      {activeTab === "map" && (
+        <div>
+          <TunisiaMap govData={mapData} delData={delData} lang={lang}
+                      selected={govFilter} onSelect={setGovFilter}
+                      localizeGov={localizeGov} delName={delName} describe={describe} />
+          {namedInView.length > 0 && (
+            <p className="text-xs mt-2 leading-relaxed px-1" style={{ color: T.muted }}>
+              <span style={{ color: T.amber }}>{s.namedInBulletin}: </span>
+              {namedInView.join("، ")}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ================= REPORT ================= */}
+      {activeTab === "report" && (
+        <section className="rounded-2xl p-4"
+                 style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+          <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
+          <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
+          <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
+                         selectedId={areaId} showReport={true} />
+          <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
+            {rtl
+              ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
+              : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
+          </p>
+        </section>
+      )}
+
+      {/* ================= AREAS ================= */}
+      {activeTab === "areas" && (
+        <AreasTab rows={areaRows} lang={lang} onPick={pickFromList} />
+      )}
+
+      {/* ================= STATS ================= */}
+      {activeTab === "stats" && <StatsTab stats={stats} lang={lang} />}
 
       <footer className="mt-8 pt-4 text-center text-xs leading-relaxed"
               style={{ borderTop: `1px solid ${T.line}`, color: T.muted }}>
@@ -683,5 +780,7 @@ export default function PublicApp({
         <p className="mt-1">{s.beta} — {rtl ? "لا نجمع أي بيانات شخصية" : "aucune donnée personnelle collectée"}</p>
       </footer>
     </main>
+    <BottomNav active={activeTab} onChange={setActiveTab} lang={lang} />
+    </>
   );
 }

@@ -30,12 +30,14 @@ function loadDeviceId(): string {
 }
 
 export default function AreaAndReport({
-  places, lang, onAreaChange, selectedId,
+  places, lang, onAreaChange, selectedId, showReport = true,
 }: {
   places: PublicPlace[];
   lang: Lang;
   onAreaChange: (id: number | null) => void;
   selectedId: number | null;
+  // false on the home tab (pick an area only); true on the report tab.
+  showReport?: boolean;
 }) {
   const s = STR[lang];
   const byId = new Map(places.map((p) => [p.id, p]));
@@ -147,7 +149,7 @@ export default function AreaAndReport({
         </select>
       )}
 
-      {chosen && (
+      {chosen && showReport && (
         <div className="mt-3">
           {pending ? (
             <div className="rounded-xl p-3" style={{ background: T.surface2, border: `1px solid ${T.line}` }}>
@@ -182,7 +184,7 @@ export default function AreaAndReport({
                     <button key={u} onClick={() => setReportUtility(u)}
                             className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-bold"
                             style={{
-                              background: on ? `${c}22` : "transparent",
+                              background: on ? `color-mix(in srgb, ${c} 14%, transparent)` : "transparent",
                               border: `1px solid ${on ? c : T.line}`,
                               color: on ? c : T.muted,
                             }}>

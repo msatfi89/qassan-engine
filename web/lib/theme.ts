@@ -4,19 +4,24 @@
  * agreed design, and drifting from it by a few hex digits is how an approved
  * look quietly becomes a different one.
  */
+// CSS-variable references, not literals. globals.css defines the values for
+// dark (:root) and light (:root[data-theme=light]), so every `style={{ color:
+// T.text }}` becomes theme-aware without touching a single component. The map's
+// vivid data colours are intentionally NOT here — they stay hardcoded so a cut
+// looks the same red in both themes.
 export const T = {
-  night: "#0E1720",
-  surface: "#16222E",
-  surface2: "#1C2A38",
-  line: "#243646",
-  amber: "#FFB637", // electricity
-  amberDim: "#8A6320", // a cut window already in the past
-  aqua: "#3EC8DA", // water
-  live: "#FF6A55", // happening right now
-  observed: "#B48CF0", // social observation — unconfirmed, not official
-  text: "#EAF1F7",
-  muted: "#8CA1B3",
-  ok: "#5BD08F",
+  night: "var(--bg)",
+  surface: "var(--surface)",
+  surface2: "var(--surface2)",
+  line: "var(--border)",
+  amber: "var(--amber)", // electricity
+  amberDim: "var(--amber-dim)", // a cut window already in the past
+  aqua: "var(--aqua)", // water
+  live: "var(--live)", // happening right now
+  observed: "var(--observed)", // social observation — unconfirmed, not official
+  text: "var(--text)",
+  muted: "var(--muted)",
+  ok: "var(--ok)",
 } as const;
 
 export type Lang = "ar" | "fr";
@@ -73,6 +78,15 @@ export const STR = {
     mapUpcoming: "قطع متوقع اليوم",
     tapGov: "👆 اضغط على ولاية لعرض معتمدياتها",
     namedInBulletin: "المناطق المذكورة في البلاغ",
+    tabHome: "اليوم", tabMap: "الخريطة", tabReport: "بلّغ", tabAreas: "المناطق", tabStats: "إحصائيات",
+    reportStep1: "١ · نوع الخدمة", reportStep2: "٢ · الحالة", reportStep3: "٣ · المنطقة",
+    reportSubmit: "أرسل التبليغ", reportThanks: "شكرا، وصل بلاغك — يعاون جيرانك",
+    searchArea: "ابحث عن منطقتك…", statusOut: "مقصوص", statusOn: "يخدم", statusNoData: "لا توجد بيانات",
+    lastReport: "آخر تبليغ", noAreas: "ما لقيناش نتيجة",
+    statActive: "انقطاعات جارية", statUpcoming: "قطع متوقّع اليوم", statReports24: "تبليغات (٢٤ ساعة)",
+    statApproved: "بلاغات مصادق عليها", statSoon: "الإحصائيات المتقدّمة قريبا",
+    statSoonBody: "التوقّعات والاتجاهات تظهر فقط لمّا يكون عندنا معطيات كافية — بعيّنة معلومة، بدون تخمين.",
+    themeToggle: "الوضع",
   },
   fr: {
     appName: "9assan",
@@ -124,5 +138,14 @@ export const STR = {
     mapUpcoming: "Coupure prévue aujourd'hui",
     tapGov: "👆 Touchez un gouvernorat pour ses délégations",
     namedInBulletin: "Zones citées dans le communiqué",
+    tabHome: "Aujourd'hui", tabMap: "Carte", tabReport: "Signaler", tabAreas: "Villes", tabStats: "Stats",
+    reportStep1: "1 · Service", reportStep2: "2 · État", reportStep3: "3 · Zone",
+    reportSubmit: "Envoyer", reportThanks: "Merci, signalement reçu",
+    searchArea: "Cherchez votre zone…", statusOut: "Coupé", statusOn: "OK", statusNoData: "Aucune donnée",
+    lastReport: "Dernier signalement", noAreas: "Aucun résultat",
+    statActive: "Coupures en cours", statUpcoming: "Prévues aujourd'hui", statReports24: "Signalements (24 h)",
+    statApproved: "Communiqués validés", statSoon: "Statistiques avancées bientôt",
+    statSoonBody: "Prévisions et tendances n'apparaîtront qu'avec des données suffisantes — échantillon connu, sans conjecture.",
+    themeToggle: "Thème",
   },
 } as const;

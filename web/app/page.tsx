@@ -3,6 +3,7 @@ import {
   fetchApprovedEvents,
   fetchPlaces,
   fetchReportCounts,
+  fetchReportCount24h,
   dedupeForDisplay,
 } from "@/lib/public-db";
 import PublicApp from "./PublicApp";
@@ -22,10 +23,11 @@ export default async function Home() {
   // Events and places come through the anon key, so row-level security decides
   // what exists. Report counts need the service key (anon is INSERT-only on
   // reports) and are aggregated here — the browser receives numbers only.
-  const [events, places, reportCounts] = await Promise.all([
+  const [events, places, reportCounts, reports24] = await Promise.all([
     fetchApprovedEvents(),
     fetchPlaces(),
     fetchReportCounts().catch(() => ({})),
+    fetchReportCount24h().catch(() => 0),
   ]);
 
   return (
@@ -33,6 +35,7 @@ export default async function Home() {
       events={dedupeForDisplay(events)}
       places={places}
       reportCounts={reportCounts}
+      reports24={reports24}
     />
   );
 }

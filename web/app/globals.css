@@ -4,6 +4,10 @@
    approved. The earlier values here were approximations I chose before
    reading that file; they have been replaced rather than blended, because a
    palette that is nearly the approved one is just a different palette. */
+/* Dark is the default and the design Med approved. Light is an alternative
+   the toggle switches to by setting data-theme="light" on <html>. Only the
+   structural tokens swap; the accent hues (amber/aqua/live/observed) are the
+   brand and stay put, lightly darkened for contrast on light backgrounds. */
 :root {
   --bg: #0e1720;      /* T.night */
   --surface: #16222e; /* T.surface */
@@ -15,8 +19,23 @@
   --amber-dim: #8a6320;
   --aqua: #3ec8da;    /* water */
   --live: #ff6a55;    /* happening now */
+  --observed: #b48cf0;
   --ok: #5bd08f;
   --error: #e5484d;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface2: #eef3f9;
+  --border: #d3deea;
+  --text: #14212e;
+  --muted: #5c6f82;
+  --amber: #d98500;
+  --aqua: #0e93a8;
+  --live: #e0492f;
+  --observed: #7c4fd0;
+  --ok: #1c9e5f;
 }
 
 @theme inline {
