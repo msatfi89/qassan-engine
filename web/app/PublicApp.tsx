@@ -310,12 +310,10 @@ export default function PublicApp({
   // national, and with no area chosen the national view remains the default.
   useEffect(() => {
     if (areaId == null) return;
-    const p = places.find((x) => x.id === areaId);
-    if (!p) return;
-    const gov = p.level === "governorate"
-      ? p.name_ar
-      : (p.parent_id ? places.find((x) => x.id === p.parent_id)?.name_ar ?? null : null);
-    if (gov) setGovFilter(gov);
+    const byId = new Map(places.map((x) => [x.id, x]));
+    let p = byId.get(areaId);
+    while (p && p.level !== "governorate") p = p.parent_id ? byId.get(p.parent_id) : undefined;
+    if (p) setGovFilter(p.name_ar);
   }, [areaId, places]);
 
   // Drive the document so native RTL applies to scrollbars, form controls
@@ -333,30 +331,55 @@ export default function PublicApp({
 
   const area = places.find((p) => p.id === areaId) ?? null;
 
-  // Events touching my area: named directly, or covering its governorate.
+  // Place-tree helpers. The tree is now three deep (governorate → delegation →
+  // neighborhood), so every rollup walks to the top rather than one level.
+  const tree = useMemo(() => {
+    const byId = new Map(places.map((p) => [p.id, p]));
+    // self + every ancestor id, so an event/report at any level matches an
+    // area at that level OR any level above it.
+    const ancestors = (id: number): Set<number> => {
+      const out = new Set<number>();
+      let p = byId.get(id);
+      while (p) { out.add(p.id); p = p.parent_id ? byId.get(p.parent_id) : undefined; }
+      return out;
+    };
+    const govNameOf = (id: number): string | null => {
+      let p = byId.get(id);
+      while (p && p.level !== "governorate") p = p.parent_id ? byId.get(p.parent_id) : undefined;
+      return p?.name_ar ?? null;
+    };
+    // The delegation ancestor of any place (itself if it is a delegation),
+    // for rolling neighborhood reports up onto the delegation map.
+    const delegationIdOf = (id: number): number | null => {
+      let p = byId.get(id);
+      while (p && p.level !== "delegation") p = p.parent_id ? byId.get(p.parent_id) : undefined;
+      return p?.id ?? null;
+    };
+    // every descendant id (a delegation's neighborhoods, a gov's everything),
+    // so an area's report count includes finer reports beneath it.
+    const kids = new Map<number, number[]>();
+    for (const p of places) if (p.parent_id != null) (kids.get(p.parent_id) ?? kids.set(p.parent_id, []).get(p.parent_id)!).push(p.id);
+    const descendants = (id: number): number[] => {
+      const out: number[] = [], stack = [id];
+      while (stack.length) { const c = stack.pop()!; for (const k of kids.get(c) ?? []) { out.push(k); stack.push(k); } }
+      return out;
+    };
+    return { byId, ancestors, govNameOf, delegationIdOf, descendants };
+  }, [places]);
+  const govNameOf = tree.govNameOf;
+
+  // Events touching my area: at the area itself, or at any level above it (a
+  // governorate-wide bulletin covers a neighborhood inside it).
   const mine = useMemo(() => {
     if (!area) return [];
-    const ids = new Set<number>([area.id]);
-    if (area.parent_id) ids.add(area.parent_id);
+    const ids = tree.ancestors(area.id);
     return withStatus.filter((e) => e.event_areas.some((a) => ids.has(a.place_id)));
-  }, [withStatus, area]);
+  }, [withStatus, area, tree]);
 
   const myLive = mine.find((e) => e._status.status === "live");
   const myNext = mine.filter((e) => e._status.status === "upcoming")
                      .sort((a, b) => (a._status.startsInMin ?? 0) - (b._status.startsInMin ?? 0))[0];
   const namedInLive = myLive?.event_areas.some((a) => a.place_id === area?.id && a.named_explicitly);
-
-  /** Governorate name for a place id, so map clicks can filter the feed. */
-  const govNameOf = useMemo(() => {
-    const byId = new Map(places.map((p) => [p.id, p]));
-    return (placeId: number): string | null => {
-      const p = byId.get(placeId);
-      if (!p) return null;
-      return p.level === "governorate"
-        ? p.name_ar
-        : (p.parent_id ? byId.get(p.parent_id)?.name_ar ?? null : null);
-    };
-  }, [places]);
 
   const recent = useMemo(() => {
     const cutoff = Date.now() - FEED_WINDOW_HOURS * 3600_000;
@@ -396,10 +419,11 @@ export default function PublicApp({
       for (const a of e.event_areas) {
         const g = govNameOf(a.place_id);
         if (g) apply(touchGov(g), e);
-        // Only delegation-level links shade the zoomed view; a governorate-wide
-        // link would otherwise flood every delegation as if each were named.
-        const p = places.find((x) => x.id === a.place_id);
-        if (p && p.level !== "governorate") apply(touchDel(a.place_id), e);
+        // Roll any sub-governorate link up onto its delegation for the zoomed
+        // view. A governorate-wide link (delegationIdOf null) colours the
+        // national view only, so a province bulletin does not paint every town.
+        const delId = tree.delegationIdOf(a.place_id);
+        if (delId) apply(touchDel(delId), e);
       }
     }
     for (const [placeId, c] of Object.entries(reportCounts)) {
@@ -408,13 +432,27 @@ export default function PublicApp({
       if (cuts <= 0) continue;
       const g = govNameOf(id);
       if (g) touchGov(g).reports += cuts;
-      const p = places.find((x) => x.id === id);
-      if (p && p.level !== "governorate") touchDel(id).reports += cuts;
+      const delId = tree.delegationIdOf(id);
+      if (delId) touchDel(delId).reports += cuts;
     }
     return { mapData: gov, delData: del };
-  }, [recent, reportCounts, govNameOf, places]);
+  }, [recent, reportCounts, govNameOf, tree]);
 
-  const counts = area ? reportCounts[area.id] : undefined;
+  // Reports for the selected area: its own plus everything beneath it, so a
+  // delegation's count includes its neighborhoods and a neighborhood shows just
+  // its own. Aggregation is upward for display, per the spec.
+  const counts = useMemo(() => {
+    if (!area) return undefined;
+    const ids = [area.id, ...tree.descendants(area.id)];
+    const acc = { electricity: { cut: 0, restored: 0 }, water: { cut: 0, restored: 0 } };
+    for (const id of ids) {
+      const c = reportCounts[id];
+      if (!c) continue;
+      acc.electricity.cut += c.electricity.cut;
+      acc.water.cut += c.water.cut;
+    }
+    return acc;
+  }, [area, reportCounts, tree]);
 
   return (
     <main className="mx-auto w-full max-w-[640px] px-4 pb-16 pt-5" style={{ color: T.text }}>

@@ -38,8 +38,10 @@ export default function AreaAndReport({
   selectedId: number | null;
 }) {
   const s = STR[lang];
+  const byId = new Map(places.map((p) => [p.id, p]));
   const governorates = places.filter((p) => p.level === "governorate");
   const [govId, setGovId] = useState<number | null>(null);
+  const [delId, setDelId] = useState<number | null>(null);
   // Which utility the report is about. Water is a first-class choice, not an
   // afterthought — SONEDE cuts are a year-round differentiator, unlike STEG's
   // summer peak — so the toggle defaults to nothing pre-selected visually but
@@ -49,16 +51,34 @@ export default function AreaAndReport({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  // Restore the two upper selects from the finest saved place, whatever its
+  // level: a saved neighborhood sets its delegation and governorate too.
   useEffect(() => {
     if (!selectedId) return;
-    const place = places.find((p) => p.id === selectedId);
-    if (place) setGovId(place.parent_id ?? place.id);
+    const place = byId.get(selectedId);
+    if (!place) return;
+    if (place.level === "neighborhood") {
+      const del = place.parent_id ? byId.get(place.parent_id) : undefined;
+      setDelId(del?.id ?? null);
+      setGovId(del?.parent_id ?? null);
+    } else if (place.level === "delegation") {
+      setDelId(place.id);
+      setGovId(place.parent_id ?? null);
+    } else {
+      setGovId(place.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, places]);
 
   const delegations = govId
-    ? places.filter((p) => p.parent_id === govId && p.level !== "governorate")
+    ? places.filter((p) => p.parent_id === govId && p.level === "delegation")
     : [];
-  const chosen = places.find((p) => p.id === selectedId) ?? null;
+  // Third level only exists for some delegations (the dense urban ones seeded
+  // from OSM). The select appears only when there is something to choose.
+  const neighborhoods = delId
+    ? places.filter((p) => p.parent_id === delId && p.level === "neighborhood")
+    : [];
+  const chosen = byId.get(selectedId ?? -1) ?? null;
 
   function chooseArea(id: number) {
     localStorage.setItem(AREA_KEY, String(id));
@@ -96,19 +116,36 @@ export default function AreaAndReport({
     <div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select value={govId ?? ""} aria-label={s.govLabel}
-                onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setGovId(v); onAreaChange(null); }}
+                onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setGovId(v); setDelId(null); onAreaChange(null); }}
                 className="w-full rounded-lg px-3 py-2.5 text-sm" style={selectStyle}>
           <option value="">{s.govLabel}…</option>
           {governorates.map((g) => <option key={g.id} value={g.id}>{label(g, lang)}</option>)}
         </select>
 
-        <select value={selectedId ?? ""} disabled={!govId} aria-label={s.cityLabel}
-                onChange={(e) => e.target.value && chooseArea(Number(e.target.value))}
+        <select value={delId ?? ""} disabled={!govId} aria-label={s.cityLabel}
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : null;
+                  setDelId(v);
+                  // Report at delegation level for now; refine to a neighborhood
+                  // if the user picks one below.
+                  if (v) chooseArea(v);
+                }}
                 className="w-full rounded-lg px-3 py-2.5 text-sm disabled:opacity-50" style={selectStyle}>
           <option value="">{govId ? `${s.cityLabel}…` : s.govLabel}</option>
           {delegations.map((d) => <option key={d.id} value={d.id}>{label(d, lang)}</option>)}
         </select>
       </div>
+
+      {/* Third level: appears only when the chosen delegation has neighborhoods. */}
+      {neighborhoods.length > 0 && (
+        <select value={chosen?.level === "neighborhood" ? chosen.id : ""}
+                aria-label={s.hoodLabel}
+                onChange={(e) => e.target.value ? chooseArea(Number(e.target.value)) : (delId && chooseArea(delId))}
+                className="w-full rounded-lg px-3 py-2.5 text-sm mt-2" style={selectStyle}>
+          <option value="">{s.hoodLabel} ({s.optional})</option>
+          {neighborhoods.map((n) => <option key={n.id} value={n.id}>{label(n, lang)}</option>)}
+        </select>
+      )}
 
       {chosen && (
         <div className="mt-3">
