@@ -122,11 +122,17 @@ export default function TunisiaMap({
         </svg>
       </div>
 
-      {zoom && (
+      {zoom ? (
         <p className="text-[11px] mt-2" style={{ color: T.muted }}>
           {lang === "ar"
             ? "المناطق الرمادية: حدود بدون مطابقة في السجل — لا تُلوَّن أبدا."
             : "Zones grises : limites non appariées au registre — jamais colorées."}
+        </p>
+      ) : (
+        // Discoverability: without this, the delegation layer is invisible
+        // until the user guesses that governorates are tappable.
+        <p className="text-[11px] mt-2 text-center" style={{ color: T.amber }}>
+          {s.tapGov}
         </p>
       )}
 

@@ -69,6 +69,7 @@ export const STR = {
     observed: "رصد من مواقع التواصل — غير مؤكد",
     observedShort: "غير مؤكد",
     mapUpcoming: "قطع متوقع اليوم",
+    tapGov: "👆 اضغط على ولاية لعرض معتمدياتها",
   },
   fr: {
     appName: "9assan",
@@ -116,5 +117,6 @@ export const STR = {
     observed: "Observation réseaux sociaux — non confirmé",
     observedShort: "Non confirmé",
     mapUpcoming: "Coupure prévue aujourd'hui",
+    tapGov: "👆 Touchez un gouvernorat pour ses délégations",
   },
 } as const;

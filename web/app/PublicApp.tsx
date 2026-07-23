@@ -302,6 +302,22 @@ export default function PublicApp({
     if (a) setAreaId(a);
   }, []);
 
+  // Zoom the map to the chosen area's governorate whenever an area is picked
+  // (including one restored from localStorage on load). Without this the map
+  // stays on the national view and the delegation layer is invisible unless
+  // the user happens to discover that governorates are tappable — which is why
+  // it looked like "no delegations". The back control still returns to
+  // national, and with no area chosen the national view remains the default.
+  useEffect(() => {
+    if (areaId == null) return;
+    const p = places.find((x) => x.id === areaId);
+    if (!p) return;
+    const gov = p.level === "governorate"
+      ? p.name_ar
+      : (p.parent_id ? places.find((x) => x.id === p.parent_id)?.name_ar ?? null : null);
+    if (gov) setGovFilter(gov);
+  }, [areaId, places]);
+
   // Drive the document so native RTL applies to scrollbars, form controls
   // and text selection, not just our own layout.
   useEffect(() => {
