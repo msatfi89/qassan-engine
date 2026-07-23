@@ -771,7 +771,8 @@ export default function PublicApp({
               without leaving the page. Tapping a card sets it as your area. */}
           <div>
             <h3 className="text-sm font-bold mb-2 px-1" style={{ color: T.text }}>{s.tabAreas}</h3>
-            <AreasTab rows={areaRows} lang={lang} onPick={pickFromList} />
+            <AreasTab rows={areaRows} lang={lang} onPick={pickFromList}
+                      focusId={areaId != null ? tree.delegationIdOf(areaId) : null} />
           </div>
         </div>
       )}

@@ -352,8 +352,39 @@ def process(doc: dict, registry: dict) -> str:
     if not links:
         log_run(True, f"event {event['id']}: NO AREAS LINKED - review manually")
 
+    # ---- auto-approval gate (design-contract amendment) ----
+    # The AI may publish WITHOUT waiting for Med only when it is relaying a
+    # clean official announcement: high confidence, every place name matched,
+    # every deterministic check passed, a plausible date, and at least one
+    # linked area. Anything short of all of these stays 'pending' for a human.
+    # Backfilled history is never auto-approved (it is bulk and unreviewed), and
+    # social observations never reach here — they are created via the dashboard,
+    # not the parser. Med can unpublish any auto-approval after the fact.
+    try:
+        d = datetime.strptime(parsed.get("date", ""), "%Y-%m-%d").date()
+        pub = datetime.strptime(published[:10], "%Y-%m-%d").date()
+        date_ok = abs((d - pub).days) <= 2
+    except ValueError:
+        date_ok = False
+
+    auto = (
+        not doc.get("is_backfill")   # never auto-publish bulk history
+        and not problems             # every deterministic validation passed
+        and not unmatched            # zero unmatched place names
+        and bool(links)              # at least one area to show on the map
+        and final >= 0.90            # AI's own confidence, uncapped here
+        and date_ok                  # within +/-2 days of publication
+    )
+    if auto:
+        sb_patch("events", {"id": f"eq.{event['id']}"},
+                 {"approval_status": "auto_approved",
+                  "approved_at": datetime.now(timezone.utc).isoformat()})
+        log_run(True, f"event {event['id']}: AUTO-APPROVED conf={final:.2f} "
+                      f"areas={len(links)} src={doc['source_name']}")
+
     sb_patch("raw_documents", {"id": f"eq.{doc['id']}"}, {"parse_status": "parsed"})
-    return f"event:{event['id']} conf={confidence:.2f} unmatched={len(unmatched)}"
+    status = "auto_approved" if auto else "pending"
+    return f"event:{event['id']} conf={final:.2f} {status} unmatched={len(unmatched)}"
 
 
 def run(limit: int = 25, drain: bool = False) -> None:

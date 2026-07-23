@@ -82,6 +82,16 @@ export async function fetchPendingEvents(): Promise<QueueEvent[]> {
   });
 }
 
+/** Recently auto-approved events, newest first, for the unpublish view. */
+export async function fetchAutoApproved(): Promise<QueueEvent[]> {
+  return sbGet<QueueEvent[]>("events", {
+    select: `${SELECT},approved_at`,
+    approval_status: "eq.auto_approved",
+    order: "approved_at.desc.nullslast",
+    limit: "100",
+  });
+}
+
 /**
  * Names the extractor found that no event_area covers.
  *

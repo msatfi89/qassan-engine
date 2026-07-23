@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Zap, Droplets } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
 
@@ -41,27 +41,45 @@ function Pill({ status, utility, lang }: { status: AreaStatus; utility: "e" | "w
 }
 
 export default function AreasTab({
-  rows, lang, onPick,
+  rows, lang, onPick, focusId,
 }: {
   rows: AreaRow[];
   lang: Lang;
   onPick: (id: number) => void;
+  // The delegation currently selected as "my area" (or the parent of a
+  // selected neighborhood). When set, the list narrows to that governorate and
+  // scrolls the selected card into view — selecting a zone FILTERS the list,
+  // never replaces it.
+  focusId?: number | null;
 }) {
   const s = STR[lang];
   const [q, setQ] = useState("");
+  const focusRef = useRef<HTMLButtonElement | null>(null);
+
+  const focusGov = focusId != null ? rows.find((r) => r.id === focusId)?.gov ?? null : null;
 
   const filtered = useMemo(() => {
     const norm = (x: string) => x.replace(/[ً-ْـ]/g, "").toLowerCase().trim();
     const query = norm(q);
+    // A typed search wins; otherwise, if a zone is selected, scope to its
+    // governorate so the user sees their area and its neighbours.
     const base = query
       ? rows.filter((r) => norm(r.name).includes(query) || norm(r.gov).includes(query))
-      : rows;
-    // Areas with something happening float to the top; then by report volume.
+      : focusGov
+        ? rows.filter((r) => r.gov === focusGov)
+        : rows;
     return [...base].sort((a, b) => {
+      if (a.id === focusId) return -1;         // selected area pinned to top
+      if (b.id === focusId) return 1;
       const act = (r: AreaRow) => (r.elec === "cut" || r.water === "cut" ? 2 : r.reports > 0 ? 1 : 0);
       return act(b) - act(a) || b.reports - a.reports;
     }).slice(0, 120);
-  }, [rows, q]);
+  }, [rows, q, focusGov, focusId]);
+
+  // Scroll the selected card into view when the selection changes.
+  useEffect(() => {
+    if (focusId != null && !q) focusRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusId, q]);
 
   return (
     <div>
@@ -77,10 +95,14 @@ export default function AreasTab({
         <p className="text-center text-sm py-8" style={{ color: T.muted }}>{s.noAreas}</p>
       ) : (
         <div className="grid gap-2">
-          {filtered.map((r) => (
+          {filtered.map((r) => {
+            const isFocus = r.id === focusId;
+            return (
             <button key={r.id} onClick={() => onPick(r.id)}
+                    ref={isFocus ? focusRef : undefined}
                     className="rounded-2xl p-3 text-start"
-                    style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+                    style={{ background: isFocus ? T.surface2 : T.surface,
+                             border: `1px solid ${isFocus ? T.amber : T.line}` }}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-bold truncate" style={{ color: T.text }}>{r.name}</p>
@@ -98,7 +120,8 @@ export default function AreasTab({
                 </p>
               )}
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

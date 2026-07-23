@@ -56,6 +56,27 @@ export async function decideEvent(id: number, decision: Decision) {
 }
 
 /**
+ * Unpublish an auto-approved event: send it back to 'pending' so it leaves the
+ * public app and returns to the review queue. This is the human override on
+ * the auto-approval amendment — the AI can publish a clean official
+ * announcement without waiting, and Med can pull any of them down after the
+ * fact. Guarded on the current status so it only ever acts on an auto-approval.
+ */
+export async function unpublishEvent(id: number) {
+  await requireAdmin();
+  if (!Number.isInteger(id) || id <= 0) throw new Error("Bad event id");
+  const rows = await sbPatch<unknown[]>(
+    "events",
+    { id: `eq.${id}`, approval_status: "eq.auto_approved" },
+    { approval_status: "pending", approved_at: null }
+  );
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/admin/auto");
+  return { changed: rows.length };
+}
+
+/**
  * Bulk approve for the >= 0.85 tier.
  *
  * Takes explicit ids rather than "approve everything above the threshold".
