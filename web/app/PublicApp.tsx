@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Zap, Droplets, Clock, Radio, MapPin, Languages, AlertTriangle, Crosshair } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
 import { computeStatus, feedOrder, type StatusResult } from "@/lib/status";
@@ -252,8 +252,24 @@ function EventCard({ ev, lang }: { ev: Ev; lang: Lang }) {
   );
 }
 
-/* ---------- the app ---------- */
-export default function PublicApp({
+/* ============================================================================
+ * Shared store. All app state and every derived value are computed ONCE here
+ * and exposed via context. Each tab is a separate ROUTE that renders one View
+ * reading this context. A route decides which View mounts; the selected zone
+ * (and lang/theme) are shared DATA the Views read to filter content — they
+ * never decide which View renders. This is the fix for the recurring
+ * "wrong tab content" bug: content is a pure function of the route.
+ * ========================================================================== */
+
+type PublicStore = ReturnType<typeof usePublicData>;
+const Ctx = createContext<PublicStore | null>(null);
+export function usePublic(): PublicStore {
+  const v = useContext(Ctx);
+  if (!v) throw new Error("usePublic must be used inside <PublicProvider>");
+  return v;
+}
+
+function usePublicData({
   events, places, reportCounts, reports24,
 }: {
   events: PublicEvent[];
@@ -263,7 +279,6 @@ export default function PublicApp({
 }) {
   const [lang, setLang] = useState<Lang>("ar");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [areaId, setAreaId] = useState<number | null>(null);
   const [tab, setTab] = useState<"all" | "electricity" | "water">("all");
   const [govFilter, setGovFilter] = useState<string | null>(null);
@@ -587,38 +602,82 @@ export default function PublicApp({
     localStorage.setItem(AREA_KEY, String(id));
   };
 
+  return {
+    lang, setLang, theme, setTheme, rtl, s,
+    events, places, reportCounts,
+    area, areaId, setAreaId, govFilter, setGovFilter,
+    locating, locateMe, locError,
+    withStatus, tree, mine, myLive, myNext, namedInLive,
+    recent, feed, tab, setTab,
+    mapData, delData, hh, localizeGov, delName, describe,
+    counts, namedInView, areaRows, stats, pickFromList,
+  };
+}
+
+/* ---------- provider + shared shell (header + BottomNav) ---------- */
+export function PublicProvider({
+  data, children,
+}: {
+  data: {
+    events: PublicEvent[];
+    places: PublicPlace[];
+    reportCounts: Record<number, PlaceReportCounts>;
+    reports24: number;
+  };
+  children: React.ReactNode;
+}) {
+  const store = usePublicData(data);
+  const { s, rtl, theme, setTheme, lang, setLang } = store;
+  return (
+    <Ctx.Provider value={store}>
+      <main className="mx-auto w-full max-w-[640px] px-4 pb-28 pt-5" style={{ color: T.text }}>
+        <header className="flex items-center justify-between mb-5">
+          <div>
+            <h1 className="text-2xl font-extrabold">
+              {s.appName}{" "}
+              <span className="align-middle text-[10px] px-2 py-0.5 rounded-full border"
+                    style={{ borderColor: T.amber, color: T.amber }}>
+                {s.beta}
+              </span>
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: T.muted }}>{s.tagline}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                    className="flex items-center justify-center rounded-lg p-2"
+                    style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
+                    aria-label={s.themeToggle}>
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+            <button onClick={() => setLang(rtl ? "fr" : "ar")}
+                    className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg"
+                    style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
+                    aria-label="language">
+              <Languages size={14} /> {rtl ? "FR" : "ع"}
+            </button>
+          </div>
+        </header>
+        {children}
+        <footer className="mt-8 pt-4 text-center text-xs leading-relaxed"
+                style={{ borderTop: `1px solid ${T.line}`, color: T.muted }}>
+          <p>{s.sources}</p>
+          <p className="mt-1">{s.beta} — {rtl ? "لا نجمع أي بيانات شخصية" : "aucune donnée personnelle collectée"}</p>
+        </footer>
+      </main>
+      <BottomNav lang={lang} />
+    </Ctx.Provider>
+  );
+}
+
+/* ======================= VIEWS (one per route) ======================= */
+
+export function HomeView() {
+  const {
+    s, rtl, lang, area, areaId, setAreaId, myLive, myNext, namedInLive,
+    counts, places, locateMe, locating, locError, mine, withStatus, feed, tab, setTab,
+  } = usePublic();
   return (
     <>
-    <main className="mx-auto w-full max-w-[640px] px-4 pb-28 pt-5" style={{ color: T.text }}>
-      <header className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-extrabold">
-            {s.appName}{" "}
-            <span className="align-middle text-[10px] px-2 py-0.5 rounded-full border"
-                  style={{ borderColor: T.amber, color: T.amber }}>
-              {s.beta}
-            </span>
-          </h1>
-          <p className="text-xs mt-0.5" style={{ color: T.muted }}>{s.tagline}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  className="flex items-center justify-center rounded-lg p-2"
-                  style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
-                  aria-label={s.themeToggle}>
-            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
-          <button onClick={() => setLang(rtl ? "fr" : "ar")}
-                  className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg"
-                  style={{ background: T.surface, border: `1px solid ${T.line}`, color: T.text }}
-                  aria-label="language">
-            <Languages size={14} /> {rtl ? "FR" : "ع"}
-          </button>
-        </div>
-      </header>
-
-      {/* ================= HOME ================= */}
-      {activeTab === "home" && (<>
       <section className="rounded-2xl p-4 mb-4"
                style={{ background: T.surface, border: `1px solid ${T.line}` }}>
         <div className="flex items-center gap-2 mb-3">
@@ -734,59 +793,55 @@ export default function PublicApp({
           feed.map((ev) => <EventCard key={ev.id} ev={ev} lang={lang} />)
         )}
       </div>
-      </>)}
-
-      {/* ================= MAP ================= */}
-      {activeTab === "map" && (
-        <div>
-          <TunisiaMap govData={mapData} delData={delData} lang={lang}
-                      selected={govFilter} onSelect={setGovFilter}
-                      localizeGov={localizeGov} delName={delName} describe={describe} />
-          {namedInView.length > 0 && (
-            <p className="text-xs mt-2 leading-relaxed px-1" style={{ color: T.muted }}>
-              <span style={{ color: T.amber }}>{s.namedInBulletin}: </span>
-              {namedInView.join("، ")}
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ================= REPORT (+ areas list) ================= */}
-      {activeTab === "report" && (
-        <div className="grid gap-4">
-          <section className="rounded-2xl p-4"
-                   style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-            <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
-            <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
-            <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
-                           selectedId={areaId} showReport={true} />
-            <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
-              {rtl
-                ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
-                : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
-            </p>
-          </section>
-
-          {/* The areas list lives here now: see any area's state and report it
-              without leaving the page. Tapping a card sets it as your area. */}
-          <div>
-            <h3 className="text-sm font-bold mb-2 px-1" style={{ color: T.text }}>{s.tabAreas}</h3>
-            <AreasTab rows={areaRows} lang={lang} onPick={pickFromList}
-                      focusId={areaId != null ? tree.delegationIdOf(areaId) : null} />
-          </div>
-        </div>
-      )}
-
-      {/* ================= STATS ================= */}
-      {activeTab === "stats" && <StatsTab stats={stats} lang={lang} />}
-
-      <footer className="mt-8 pt-4 text-center text-xs leading-relaxed"
-              style={{ borderTop: `1px solid ${T.line}`, color: T.muted }}>
-        <p>{s.sources}</p>
-        <p className="mt-1">{s.beta} — {rtl ? "لا نجمع أي بيانات شخصية" : "aucune donnée personnelle collectée"}</p>
-      </footer>
-    </main>
-    <BottomNav active={activeTab} onChange={setActiveTab} lang={lang} />
     </>
   );
+}
+
+export function MapView() {
+  const { s, lang, mapData, delData, govFilter, setGovFilter,
+          localizeGov, delName, describe, namedInView } = usePublic();
+  return (
+    <div>
+      <TunisiaMap govData={mapData} delData={delData} lang={lang}
+                  selected={govFilter} onSelect={setGovFilter}
+                  localizeGov={localizeGov} delName={delName} describe={describe} />
+      {namedInView.length > 0 && (
+        <p className="text-xs mt-2 leading-relaxed px-1" style={{ color: T.muted }}>
+          <span style={{ color: T.amber }}>{s.namedInBulletin}: </span>
+          {namedInView.join("، ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function ReportView() {
+  const { s, rtl, lang, places, areaId, setAreaId, areaRows, pickFromList, tree } = usePublic();
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-2xl p-4"
+               style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+        <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
+        <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
+        <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
+                       selectedId={areaId} showReport={true} />
+        <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
+          {rtl
+            ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
+            : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
+        </p>
+      </section>
+
+      <div>
+        <h3 className="text-sm font-bold mb-2 px-1" style={{ color: T.text }}>{s.tabAreas}</h3>
+        <AreasTab rows={areaRows} lang={lang} onPick={pickFromList}
+                  focusId={areaId != null ? tree.delegationIdOf(areaId) : null} />
+      </div>
+    </div>
+  );
+}
+
+export function StatsView() {
+  const { stats, lang } = usePublic();
+  return <StatsTab stats={stats} lang={lang} />;
 }

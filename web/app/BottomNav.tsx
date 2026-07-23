@@ -1,41 +1,38 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Home, Map as MapIcon, Megaphone, BarChart3 } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
-import type { TabKey } from "./PublicApp";
 
 /**
- * Fixed bottom tab bar. Four tab items in the flex flow — two left of centre,
- * two right — with a fixed-width centre gutter reserving space for the report
- * FAB, which is absolutely centred and NOT part of the flow. Keeping the FAB
- * out of the flow is what fixes the skewed spacing: with it in the row, its
- * different width ate a slot and left a large empty gap on one side (worse on
- * desktop). Now all four tabs are equal width via justify-around and the FAB
- * sits dead centre at any viewport.
+ * Fixed bottom tab bar. Each tab is a real ROUTE (a Link), and the active tab
+ * is derived purely from the URL pathname — never from app state. This is what
+ * makes tab content a pure function of the route: navigating changes the URL,
+ * the URL mounts one View, and nothing about zone-selection or history can
+ * change which View renders.
+ *
+ * Layout: two equal-width tabs left of a centred report FAB, one tab plus an
+ * equal spacer on the right, so every tab is the same width and the FAB sits
+ * dead centre at any viewport (the FAB is absolutely positioned, out of flow).
  */
-export default function BottomNav({
-  active, onChange, lang,
-}: {
-  active: TabKey;
-  onChange: (k: TabKey) => void;
-  lang: Lang;
-}) {
-  const s = STR[lang];
-  const label: Record<TabKey, string> = {
-    home: s.tabHome, map: s.tabMap, report: s.tabReport, stats: s.tabStats,
-  };
+const HOME = "/", MAP = "/carte", REPORT = "/signaler", STATS = "/stats";
 
-  const TabButton = ({ k, Icon }: { k: TabKey; Icon: typeof Home }) => {
-    const on = active === k;
+export default function BottomNav({ lang }: { lang: Lang }) {
+  const s = STR[lang];
+  const path = usePathname();
+
+  const Tab = ({ href, Icon, label }: { href: string; Icon: typeof Home; label: string }) => {
+    const on = path === href;
     return (
-      <button onClick={() => onChange(k)}
-              className="flex flex-col items-center justify-center gap-0.5 py-2 flex-1"
-              aria-label={label[k]} aria-current={on ? "page" : undefined}>
+      <Link href={href} prefetch
+            className="flex flex-col items-center justify-center gap-0.5 py-2 flex-1"
+            aria-label={label} aria-current={on ? "page" : undefined}>
         <Icon size={22} color={on ? T.amber : T.muted} />
         <span className="text-[10px]" style={{ color: on ? T.amber : T.muted, fontWeight: on ? 700 : 400 }}>
-          {label[k]}
+          {label}
         </span>
-      </button>
+      </Link>
     );
   };
 
@@ -44,39 +41,30 @@ export default function BottomNav({
          style={{ background: T.surface, borderTop: `1px solid ${T.line}` }}>
       <div className="relative mx-auto max-w-[640px]"
            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-        {/* Two equal halves (each flex-1) with a centred 72px gutter for the
-            FAB. Left half holds home+map; right half holds stats spanning it.
-            Equal halves keep the gutter — and thus the FAB — dead centre, and
-            nothing is left as an empty gap. */}
         <div className="flex items-stretch">
           <div className="flex flex-1">
-            <TabButton k="home" Icon={Home} />
-            <TabButton k="map" Icon={MapIcon} />
+            <Tab href={HOME} Icon={Home} label={s.tabHome} />
+            <Tab href={MAP} Icon={MapIcon} label={s.tabMap} />
           </div>
           <div style={{ width: 72 }} aria-hidden />
           <div className="flex flex-1">
-            {/* stats sits in the inner-right slot so it mirrors map across the
-                centre; the outer-right slot is an equal-width spacer, keeping
-                every tab the same width and the FAB dead centre. */}
-            <TabButton k="stats" Icon={BarChart3} />
+            <Tab href={STATS} Icon={BarChart3} label={s.tabStats} />
             <span className="flex-1" aria-hidden />
           </div>
         </div>
 
-        {/* Report FAB — absolutely centred, out of the flow. */}
-        <button onClick={() => onChange("report")}
-                aria-label={label.report}
-                className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center"
-                style={{ top: -18 }}>
+        <Link href={REPORT} prefetch aria-label={s.tabReport}
+              className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center"
+              style={{ top: -18 }}>
           <span className="flex items-center justify-center rounded-full shadow-lg"
                 style={{ width: 56, height: 56, background: T.amber, color: "#1a1205" }}>
             <Megaphone size={26} />
           </span>
           <span className="text-[10px] mt-0.5 font-bold"
-                style={{ color: active === "report" ? T.amber : T.muted }}>
-            {label.report}
+                style={{ color: path === REPORT ? T.amber : T.muted }}>
+            {s.tabReport}
           </span>
-        </button>
+        </Link>
       </div>
     </nav>
   );
