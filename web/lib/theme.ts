@@ -13,6 +13,7 @@ export const T = {
   amberDim: "#8A6320", // a cut window already in the past
   aqua: "#3EC8DA", // water
   live: "#FF6A55", // happening right now
+  observed: "#B48CF0", // social observation — unconfirmed, not official
   text: "#EAF1F7",
   muted: "#8CA1B3",
   ok: "#5BD08F",
@@ -62,6 +63,9 @@ export const STR = {
     locationDenied: "ما نجّمناش نحدّدو موقعك — اختر منطقتك يدويا",
     ended: "انتهى",
     upcoming: "قادم",
+    observed: "رصد من مواقع التواصل — غير مؤكد",
+    observedShort: "غير مؤكد",
+    mapUpcoming: "قطع متوقع اليوم",
   },
   fr: {
     appName: "9assan",
@@ -103,5 +107,8 @@ export const STR = {
     locationDenied: "Localisation impossible — choisissez votre zone",
     ended: "Terminé",
     upcoming: "À venir",
+    observed: "Observation réseaux sociaux — non confirmé",
+    observedShort: "Non confirmé",
+    mapUpcoming: "Coupure prévue aujourd'hui",
   },
 } as const;

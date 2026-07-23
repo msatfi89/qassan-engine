@@ -28,6 +28,20 @@ function dirOf(text: string): "rtl" | "ltr" {
   return ar >= la ? "rtl" : "ltr";
 }
 
+/**
+ * A place's name in the chosen language.
+ *
+ * French where we actually have it — all 24 governorates, but only ~80 of 280
+ * delegations. For the rest, fall back to the Arabic name rather than invent a
+ * transliteration: a made-up French spelling is worse than an honest Arabic
+ * one, and the design contract's rule against inventing data applies to place
+ * names too.
+ */
+function placeName(p: { name_ar: string; name_fr: string | null } | null, lang: Lang): string {
+  if (!p) return "";
+  return lang === "fr" && p.name_fr ? p.name_fr : p.name_ar;
+}
+
 function hhmm(iso: string | null): string | null {
   if (!iso) return null;
   return new Intl.DateTimeFormat("fr-TN", {
@@ -143,24 +157,31 @@ function DayStrip({ events, lang }: { events: Ev[]; lang: Lang }) {
 function EventCard({ ev, lang }: { ev: Ev; lang: Lang }) {
   const s = STR[lang];
   const water = ev.utility === "water";
+  const observation = !ev.is_official;
   const named = ev.event_areas.filter((a) => a.named_explicitly);
   const broad = ev.event_areas.filter((a) => !a.named_explicitly);
   const start = hhmm(ev.starts_at);
   const end = hhmm(ev.ends_at);
   const live = ev._status.status === "live";
 
+  // Observations get their own violet edge, distinct from live-red and the
+  // amber/aqua of official cuts, so "unconfirmed sighting" never looks
+  // official at a glance.
+  const edge = observation ? T.observed : live ? "rgba(255,106,85,0.4)" : T.line;
+
   return (
     <div className="rounded-2xl p-4"
          style={{
            background: T.surface,
-           border: `1px solid ${live ? "rgba(255,106,85,0.4)" : T.line}`,
-           opacity: ev._status.status === "ended" ? 0.55 : 1,
+           border: `1px solid ${edge}`,
+           opacity: ev._status.status === "ended" && !observation ? 0.55 : 1,
          }}>
       <div className="flex items-start gap-3">
         <div className="mt-0.5 w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-             style={{ background: `${water ? T.aqua : T.amber}1A` }}>
-          {water ? <Droplets size={18} color={T.aqua} />
-                 : <Zap size={18} color={T.amber} fill={T.amber} />}
+             style={{ background: `${observation ? T.observed : water ? T.aqua : T.amber}1A` }}>
+          {water ? <Droplets size={18} color={observation ? T.observed : T.aqua} />
+                 : <Zap size={18} color={observation ? T.observed : T.amber}
+                        fill={observation ? "none" : T.amber} />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -168,40 +189,56 @@ function EventCard({ ev, lang }: { ev: Ev; lang: Lang }) {
             <span className="text-xs" style={{ color: T.muted }}>{dayLabel(ev.starts_at, lang)}</span>
           </div>
 
+          {observation && (
+            <p className="text-xs font-bold mb-1" style={{ color: T.observed }}>
+              {s.observed}
+            </p>
+          )}
+
           <div className="flex items-center gap-2 mt-1 text-xs flex-wrap" style={{ color: T.muted }}>
             <Clock size={12} />
             <span className="font-semibold" style={{ color: T.text }}>
               {start ?? "—"}
               {ev.end_time_official && end ? ` → ${end}` : ""}
             </span>
-            {!ev.end_time_official && (
+            {!ev.end_time_official && !observation && (
               <span style={{ color: T.amber }}>· {s.endsUnknown}</span>
             )}
           </div>
 
           {(named.length > 0 || broad.length > 0) && (
             <p className="text-sm mt-2 leading-relaxed" style={{ color: T.text }}>
-              {named.map((a) => a.places?.name_ar).filter(Boolean).join("، ")}
+              {named.map((a) => placeName(a.places, lang)).filter(Boolean).join("، ")}
               {named.length > 0 && broad.length > 0 && " — "}
               {broad.length > 0 && (
                 <span style={{ color: T.muted }}>
-                  {broad.map((a) => a.places?.name_ar).filter(Boolean).join("، ")}
+                  {broad.map((a) => placeName(a.places, lang)).filter(Boolean).join("، ")}
                 </span>
               )}
             </p>
           )}
 
           {ev.cause_text && (
-            /* Verbatim from the announcement: rendered in its own direction,
-               not the UI's, so a French cause under an Arabic UI still reads
-               correctly. Never translated. */
+            /* Verbatim: rendered in its own direction, not the UI's, and never
+               translated — true of both an announcement quote and Med's note. */
             <p className="text-xs mt-2 ps-2 border-s" dir={dirOf(ev.cause_text)}
                style={{ color: T.muted, borderColor: T.line }}>
               « {ev.cause_text} »
             </p>
           )}
 
-          <p className="text-xs mt-2" style={{ color: T.muted }}>{s.source}: STEG / SONEDE</p>
+          <p className="text-xs mt-2" style={{ color: T.muted }}>
+            {observation ? (
+              ev.source_url ? (
+                <a href={ev.source_url} target="_blank" rel="noopener noreferrer"
+                   style={{ color: T.observed }}>
+                  {s.source} ↗
+                </a>
+              ) : s.observedShort
+            ) : (
+              `${s.source}: STEG / SONEDE`
+            )}
+          </p>
         </div>
       </div>
     </div>
@@ -327,12 +364,15 @@ export default function PublicApp({
   const mapData = useMemo(() => {
     const out: Record<string, MapDatum> = {};
     const touch = (name: string) =>
-      (out[name] ??= { liveElectric: false, liveWater: false, upcoming: false, reports: 0 });
+      (out[name] ??= { liveElectric: false, liveWater: false, upcoming: false, observed: false, reports: 0 });
     for (const e of recent) {
       for (const a of e.event_areas) {
         const g = govNameOf(a.place_id);
         if (!g) continue;
         const d = touch(g);
+        // An observation is live by the clock (starts_at = now), but it must
+        // never paint the governorate official amber. Route it to its own flag.
+        if (!e.is_official) { d.observed = true; continue; }
         if (e._status.status === "live") {
           if (e.utility === "water") d.liveWater = true;
           else d.liveElectric = true;
@@ -387,7 +427,7 @@ export default function PublicApp({
               <p className="text-xl font-extrabold" style={{ color: myLive ? T.live : T.ok }}>
                 {myLive ? s.cutNow : s.poweredNow}
               </p>
-              <p className="text-sm mt-1" style={{ color: T.text }}>{area.name_ar}</p>
+              <p className="text-sm mt-1" style={{ color: T.text }}>{placeName(area, lang)}</p>
               {myLive && (
                 <p className="text-xs mt-1" style={{ color: T.muted }}>
                   {namedInLive ? s.cityNamed : s.govOnly}

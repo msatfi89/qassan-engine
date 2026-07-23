@@ -42,8 +42,9 @@ export default async function AdminLayout({
   return (
     <div className="admin-shell">
       <header className="admin-header">
-        <strong>9assan</strong>
+        <a href="/admin"><strong>9assan</strong></a>
         <span className="badge">BETA</span>
+        <a href="/admin/observe" className="nav-link">+ رصد اجتماعي</a>
         <form action="/api/admin/logout" method="post" className="logout">
           <button type="submit">Log out</button>
         </form>

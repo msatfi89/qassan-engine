@@ -9,6 +9,12 @@ import { T, STR, type Lang } from "@/lib/theme";
 const AREA_KEY = "qassan.area";
 const DEVICE_KEY = "qassan.device";
 
+/** French where present, Arabic otherwise — most delegations have no name_fr,
+ *  and a fabricated transliteration is worse than the real Arabic name. */
+function label(p: { name_ar: string; name_fr: string | null }, lang: Lang): string {
+  return lang === "fr" && p.name_fr ? p.name_fr : p.name_ar;
+}
+
 /**
  * "My area" lives in localStorage on the user's own device. That is what keeps
  * the product anonymous: the server is never told which area a device watches,
@@ -88,14 +94,14 @@ export default function AreaAndReport({
                 onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setGovId(v); onAreaChange(null); }}
                 className="w-full rounded-lg px-3 py-2.5 text-sm" style={selectStyle}>
           <option value="">{s.govLabel}…</option>
-          {governorates.map((g) => <option key={g.id} value={g.id}>{g.name_ar}</option>)}
+          {governorates.map((g) => <option key={g.id} value={g.id}>{label(g, lang)}</option>)}
         </select>
 
         <select value={selectedId ?? ""} disabled={!govId} aria-label={s.cityLabel}
                 onChange={(e) => e.target.value && chooseArea(Number(e.target.value))}
                 className="w-full rounded-lg px-3 py-2.5 text-sm disabled:opacity-50" style={selectStyle}>
           <option value="">{govId ? `${s.cityLabel}…` : s.govLabel}</option>
-          {delegations.map((d) => <option key={d.id} value={d.id}>{d.name_ar}</option>)}
+          {delegations.map((d) => <option key={d.id} value={d.id}>{label(d, lang)}</option>)}
         </select>
       </div>
 
@@ -104,7 +110,7 @@ export default function AreaAndReport({
           {pending ? (
             <div className="rounded-xl p-3" style={{ background: T.surface2, border: `1px solid ${T.line}` }}>
               <p className="text-sm mb-2">
-                {chosen.name_ar} — {pending.kind === "cut" ? s.reportCut : s.reportBack}؟
+                {label(chosen, lang)} — {pending.kind === "cut" ? s.reportCut : s.reportBack}؟
               </p>
               <div className="flex gap-2">
                 <button onClick={send} disabled={busy}

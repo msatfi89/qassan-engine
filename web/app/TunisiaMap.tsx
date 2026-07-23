@@ -17,6 +17,7 @@ export type MapDatum = {
   liveElectric: boolean;
   liveWater: boolean;
   upcoming: boolean;
+  observed: boolean;
   reports: number;
 };
 
@@ -35,13 +36,19 @@ export default function TunisiaMap({
     [proj]
   );
 
+  // Priority is a claim about certainty. A live official cut outranks
+  // everything; an upcoming official cut (lighter amber) makes the map useful
+  // from the morning bulletin, not only mid-cut; a social observation gets its
+  // own violet; community reports keep their red tone. Each is a different
+  // colour, never a darker shade of the same one, so the map never blurs
+  // "STEG said" into "someone said".
   function fill(nameAr: string): string {
     const d = data[nameAr];
     if (!d) return T.surface2;
     if (d.liveElectric) return "rgba(255,182,55,0.85)";
     if (d.liveWater) return "rgba(62,200,218,0.75)";
     if (d.upcoming) return "rgba(255,182,55,0.32)";
-    // Reports without an announcement: distinctly "unconfirmed".
+    if (d.observed) return "rgba(180,140,240,0.45)";
     if (d.reports > 0) return "rgba(255,106,85,0.30)";
     return T.surface2;
   }
@@ -99,7 +106,11 @@ export default function TunisiaMap({
         </span>
         <span className="flex items-center gap-1.5">
           <i className="w-3 h-3 rounded-sm inline-block" style={{ background: "rgba(255,182,55,0.32)" }} />
-          {s.upcoming}
+          {s.mapUpcoming}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <i className="w-3 h-3 rounded-sm inline-block" style={{ background: "rgba(180,140,240,0.45)" }} />
+          {s.observedShort}
         </span>
         <span className="flex items-center gap-1.5">
           <i className="w-3 h-3 rounded-sm inline-block" style={{ background: "rgba(255,106,85,0.30)" }} />

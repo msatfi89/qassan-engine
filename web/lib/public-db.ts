@@ -56,10 +56,12 @@ export type PublicEvent = {
   ends_at: string | null;
   end_time_official: boolean;
   cause_text: string | null;
+  is_official: boolean;
+  source_url: string | null;
   event_areas: {
     place_id: number;
     named_explicitly: boolean;
-    places: { name_ar: string } | null;
+    places: { name_ar: string; name_fr: string | null } | null;
   }[];
 };
 
@@ -123,22 +125,27 @@ export async function fetchReportCounts(
  */
 export function dedupeForDisplay(events: PublicEvent[]): PublicEvent[] {
   const groups = new Map<string, PublicEvent>();
+  const kept: PublicEvent[] = [];
   for (const ev of events) {
+    // Observations are never deduped: each is a distinct human sighting, not a
+    // bulletin echoed by ten sites, and collapsing them would hide reports.
+    if (!ev.is_official) { kept.push(ev); continue; }
     const key = [ev.utility, ev.event_kind, ev.starts_at ?? "-", ev.ends_at ?? "-"].join("|");
     const held = groups.get(key);
     if (!held || ev.event_areas.length > held.event_areas.length) {
       groups.set(key, ev);
     }
   }
-  return [...groups.values()];
+  return [...kept, ...groups.values()];
 }
 
 export async function fetchApprovedEvents(): Promise<PublicEvent[]> {
   return anonGet<PublicEvent[]>("events", {
     select:
       "id,utility,event_kind,starts_at,ends_at,end_time_official,cause_text," +
-      "event_areas(place_id,named_explicitly,places(name_ar))",
+      "is_official,source_url," +
+      "event_areas(place_id,named_explicitly,places(name_ar,name_fr))",
     order: "starts_at.desc.nullslast",
-    limit: "60",
+    limit: "80",
   });
 }
