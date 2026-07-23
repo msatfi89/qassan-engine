@@ -2,21 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Map as MapIcon, Megaphone, BarChart3 } from "lucide-react";
+import { Home, Map as MapIcon, Megaphone, ListChecks, BarChart3 } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
 
 /**
- * Fixed bottom tab bar. Each tab is a real ROUTE (a Link), and the active tab
- * is derived purely from the URL pathname — never from app state. This is what
- * makes tab content a pure function of the route: navigating changes the URL,
- * the URL mounts one View, and nothing about zone-selection or history can
- * change which View renders.
+ * Fixed bottom tab bar. Each tab is a real ROUTE (a Link); the active tab is
+ * read purely from the URL pathname, never from app state. Content is a pure
+ * function of the route.
  *
- * Layout: two equal-width tabs left of a centred report FAB, one tab plus an
- * equal spacer on the right, so every tab is the same width and the FAB sits
- * dead centre at any viewport (the FAB is absolutely positioned, out of flow).
+ * Layout: two tabs left of the centred report FAB, two right — a balanced 2+2
+ * around the FAB, which is absolutely positioned out of the flow so every tab
+ * is equal width and the FAB sits dead centre at any viewport.
  */
-const HOME = "/", MAP = "/carte", REPORT = "/signaler", STATS = "/stats";
+const HOME = "/", MAP = "/carte", REPORT = "/signaler", AREAS = "/villes", STATS = "/stats";
 
 export default function BottomNav({ lang }: { lang: Lang }) {
   const s = STR[lang];
@@ -48,8 +46,8 @@ export default function BottomNav({ lang }: { lang: Lang }) {
           </div>
           <div style={{ width: 72 }} aria-hidden />
           <div className="flex flex-1">
+            <Tab href={AREAS} Icon={ListChecks} label={s.tabAreas} />
             <Tab href={STATS} Icon={BarChart3} label={s.tabStats} />
-            <span className="flex-1" aria-hidden />
           </div>
         </div>
 

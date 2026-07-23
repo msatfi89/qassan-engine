@@ -10,7 +10,7 @@ import { Sun, Moon } from "lucide-react";
 import AreaAndReport from "./AreaAndReport";
 import TunisiaMap, { type MapDatum, type ShapeInfo } from "./TunisiaMap";
 import BottomNav from "./BottomNav";
-import AreasTab, { type AreaRow, type AreaStatus } from "./AreasTab";
+import AreasTab, { type AreaRow, type AreaStatus, type UtilityCell } from "./AreasTab";
 import StatsTab, { type Stats } from "./StatsTab";
 
 /** How far back the front page looks. The archive stays in the database and
@@ -84,79 +84,6 @@ function StatusBadge({ ev, lang }: { ev: Ev; lang: Lang }) {
       {sudden ? s.sudden : s.planned}
       {ev._status.status === "ended" && ` · ${s.ended}`}
     </span>
-  );
-}
-
-/* ---------- day strip (reference: DayStrip) ---------- */
-function DayStrip({ events, lang }: { events: Ev[]; lang: Lang }) {
-  const s = STR[lang];
-  const [nowH, setNowH] = useState<number | null>(null);
-
-  // Computed after mount: the server and the visitor are in different clocks,
-  // and rendering "now" on the server would hydrate to the wrong position.
-  useEffect(() => {
-    const tick = () => {
-      const p = new Intl.DateTimeFormat("en-GB", {
-        timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false,
-      }).formatToParts(new Date());
-      const h = Number(p.find((x) => x.type === "hour")?.value ?? 0);
-      const m = Number(p.find((x) => x.type === "minute")?.value ?? 0);
-      setNowH(h + m / 60);
-    };
-    tick();
-    const id = setInterval(tick, 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const today = new Date().toDateString();
-  const bands = events.filter(
-    (e) => e.utility === "electricity" && e.starts_at &&
-           new Date(e.starts_at).toDateString() === today
-  ).map((e) => {
-    const st = new Date(e.starts_at!);
-    const en = e.ends_at ? new Date(e.ends_at) : new Date(st.getTime() + 6 * 3600_000);
-    const toH = (d: Date) => {
-      const p = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
-      return Number(p.find((x) => x.type === "hour")?.value ?? 0) + Number(p.find((x) => x.type === "minute")?.value ?? 0) / 60;
-    };
-    return { start: toH(st), end: toH(en) };
-  });
-
-  return (
-    <div className="rounded-2xl p-4" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-bold" style={{ color: T.text }}>{s.timeline}</span>
-        {nowH !== null && (
-          <span className="text-xs" style={{ color: T.muted }}>
-            {String(Math.floor(nowH)).padStart(2, "0")}:{String(Math.round((nowH % 1) * 60)).padStart(2, "0")}
-          </span>
-        )}
-      </div>
-      <div className="relative h-9 rounded-lg overflow-hidden flex" style={{ background: T.surface2 }}>
-        {Array.from({ length: 24 }, (_, h) => {
-          const inBand = bands.some((b) => h >= Math.floor(b.start) && h < Math.ceil(b.end));
-          const isPast = nowH !== null && h < Math.floor(nowH);
-          return (
-            <div key={h} className="flex-1 border-l first:border-l-0"
-                 style={{
-                   borderColor: "rgba(36,54,70,0.6)",
-                   background: inBand ? (isPast ? "rgba(138,99,32,0.55)" : "rgba(255,182,55,0.85)") : "transparent",
-                   opacity: isPast && !inBand ? 0.35 : 1,
-                 }} />
-          );
-        })}
-        {nowH !== null && (
-          <div className="absolute top-0 bottom-0 w-0.5"
-               style={{
-                 insetInlineStart: `${(nowH / 24) * 100}%`,
-                 background: T.live, boxShadow: `0 0 8px ${T.live}`,
-               }} />
-        )}
-      </div>
-      <div className="flex justify-between mt-1 text-[10px]" style={{ color: T.muted }}>
-        <span>00</span><span>06</span><span>12</span><span>18</span><span>24</span>
-      </div>
-    </div>
   );
 }
 
@@ -321,12 +248,15 @@ function usePublicData({
   }
 
   useEffect(() => {
+    // Language and theme are UI preferences and are restored. The selected
+    // ZONE is deliberately NOT restored — Med chose a clean initial state on
+    // every visit over a stale selection from a previous session. Any persisted
+    // zone is cleared so nothing is carried over.
     const saved = localStorage.getItem(LANG_KEY);
     if (saved === "ar" || saved === "fr") setLang(saved);
-    const a = Number(localStorage.getItem(AREA_KEY));
-    if (a) setAreaId(a);
     const th = localStorage.getItem(THEME_KEY);
     if (th === "light" || th === "dark") setTheme(th);
+    localStorage.removeItem(AREA_KEY);
   }, []);
 
   // Drive data-theme on <html> so the CSS variables (and thus every T.* token)
@@ -464,7 +394,7 @@ function usePublicData({
     }
     for (const [placeId, c] of Object.entries(reportCounts)) {
       const id = Number(placeId);
-      const cuts = c.electricity.cut + c.water.cut;
+      const cuts = c.electricity.cut90 + c.water.cut90;
       if (cuts <= 0) continue;
       const g = govNameOf(id);
       if (g) touchGov(g).reports += cuts;
@@ -533,12 +463,12 @@ function usePublicData({
   const counts = useMemo(() => {
     if (!area) return undefined;
     const ids = [area.id, ...tree.descendants(area.id)];
-    const acc = { electricity: { cut: 0, restored: 0 }, water: { cut: 0, restored: 0 } };
+    const acc = { electricity: 0, water: 0 };
     for (const id of ids) {
       const c = reportCounts[id];
       if (!c) continue;
-      acc.electricity.cut += c.electricity.cut;
-      acc.water.cut += c.water.cut;
+      acc.electricity += c.electricity.cut90;
+      acc.water += c.water.cut90;
     }
     return acc;
   }, [area, reportCounts, tree]);
@@ -565,24 +495,33 @@ function usePublicData({
   // "cut" = live outage; "on" = an announced cut not yet started (so power is
   // on now); "nodata" = we have nothing, stated plainly, never guessed.
   const areaRows: AreaRow[] = useMemo(() => {
-    const status = (live: boolean, up: boolean): AreaStatus => live ? "cut" : up ? "on" : "nodata";
     return places.filter((p) => p.level === "delegation").map((d) => {
       const dd = delData[d.id];
-      // roll reports up from the delegation's neighborhoods
-      let rep = 0, last: string | null = null;
-      for (const id of [d.id, ...tree.descendants(d.id)]) {
-        const c = reportCounts[id];
-        if (!c) continue;
-        rep += c.electricity.cut + c.water.cut;
-        if (c.lastAt && (!last || c.lastAt > last)) last = c.lastAt;
-      }
+      const roll = (u: "electricity" | "water") => {
+        let n90 = 0, nToday = 0, restored90 = 0, last: string | null = null;
+        for (const id of [d.id, ...tree.descendants(d.id)]) {
+          const st = reportCounts[id]?.[u];
+          if (!st) continue;
+          n90 += st.cut90; nToday += st.cutToday; restored90 += st.restored90;
+          if (st.lastAt && (!last || st.lastAt > last)) last = st.lastAt;
+        }
+        return { n90, nToday, restored90, last };
+      };
+      const cell = (
+        officialCut: boolean, officialUpcoming: boolean,
+        r: { n90: number; nToday: number; restored90: number; last: string | null },
+      ): UtilityCell => ({
+        status: officialCut || r.n90 > 0 ? "cut"
+              : officialUpcoming || r.restored90 > 0 ? "on"
+              : "nodata",
+        n90: r.n90, nToday: r.nToday, lastAt: r.last,
+      });
       return {
         id: d.id,
         name: lang === "fr" && d.name_fr ? d.name_fr : d.name_ar,
         gov: localizeGov(tree.govNameOf(d.id) ?? ""),
-        elec: status(!!dd?.liveElectric, !!dd?.upcoming),
-        water: status(!!dd?.liveWater, !!dd?.upcomingWater),
-        reports: rep, lastAt: last,
+        electricity: cell(!!dd?.liveElectric, !!dd?.upcoming, roll("electricity")),
+        water: cell(!!dd?.liveWater, !!dd?.upcomingWater, roll("water")),
       };
     });
   }, [places, delData, reportCounts, tree, lang, localizeGov]);
@@ -709,17 +648,17 @@ export function HomeView() {
               {!myLive && !myNext && (
                 <p className="text-xs mt-1" style={{ color: T.muted }}>{s.noArea}</p>
               )}
-              {counts && (counts.electricity.cut > 0 || counts.water.cut > 0) && (
+              {counts && (counts.electricity > 0 || counts.water > 0) && (
                 <p className="text-xs mt-2" style={{ color: T.muted }}>
-                  {counts.electricity.cut > 0 && (
+                  {counts.electricity > 0 && (
                     <span style={{ color: T.amber }}>
-                      ⚡ {s.confirmedElec} {counts.electricity.cut}
+                      ⚡ {s.confirmedElec} {counts.electricity}
                     </span>
                   )}
-                  {counts.electricity.cut > 0 && counts.water.cut > 0 && " · "}
-                  {counts.water.cut > 0 && (
+                  {counts.electricity > 0 && counts.water > 0 && " · "}
+                  {counts.water > 0 && (
                     <span style={{ color: T.aqua }}>
-                      💧 {s.confirmedWater} {counts.water.cut}
+                      💧 {s.confirmedWater} {counts.water}
                     </span>
                   )}
                 </p>
@@ -748,10 +687,6 @@ export function HomeView() {
             : "Votre position est calculée sur votre téléphone — rien n'est transmis."}
         </p>
       </section>
-
-      {area && mine.length > 0 && (
-        <div className="mb-4"><DayStrip events={mine} lang={lang} /></div>
-      )}
 
       {/* ---- risk banner ---- */}
       {withStatus.some((e) => e._status.status === "live" && e.utility === "electricity") && (
@@ -816,28 +751,29 @@ export function MapView() {
 }
 
 export function ReportView() {
-  const { s, rtl, lang, places, areaId, setAreaId, areaRows, pickFromList, tree } = usePublic();
+  // Report form only. The areas list is its own tab (المناطق) again.
+  const { s, rtl, lang, places, areaId, setAreaId } = usePublic();
   return (
-    <div className="grid gap-4">
-      <section className="rounded-2xl p-4"
-               style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-        <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
-        <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
-        <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
-                       selectedId={areaId} showReport={true} />
-        <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
-          {rtl
-            ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
-            : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
-        </p>
-      </section>
+    <section className="rounded-2xl p-4"
+             style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+      <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
+      <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
+      <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
+                     selectedId={areaId} showReport={true} />
+      <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
+        {rtl
+          ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
+          : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
+      </p>
+    </section>
+  );
+}
 
-      <div>
-        <h3 className="text-sm font-bold mb-2 px-1" style={{ color: T.text }}>{s.tabAreas}</h3>
-        <AreasTab rows={areaRows} lang={lang} onPick={pickFromList}
-                  focusId={areaId != null ? tree.delegationIdOf(areaId) : null} />
-      </div>
-    </div>
+export function AreasView() {
+  const { lang, areaRows, pickFromList, areaId, tree } = usePublic();
+  return (
+    <AreasTab rows={areaRows} lang={lang} onPick={pickFromList}
+              focusId={areaId != null ? tree.delegationIdOf(areaId) : null} />
   );
 }
 

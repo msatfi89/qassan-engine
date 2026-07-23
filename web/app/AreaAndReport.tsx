@@ -149,9 +149,13 @@ export default function AreaAndReport({
         </select>
       )}
 
-      {chosen && showReport && (
+      {/* Report controls are ALWAYS visible and enabled — before any zone is
+          picked and after choosing governorate → delegation → neighborhood.
+          Tapping a state button without a zone prompts the user to pick one;
+          it never hides the buttons. */}
+      {showReport && (
         <div className="mt-3">
-          {pending ? (
+          {pending && chosen ? (
             <div className="rounded-xl p-3" style={{ background: T.surface2, border: `1px solid ${T.line}` }}>
               <p className="text-sm mb-2">
                 {label(chosen, lang)} · {reportUtility === "water" ? s.water : s.elec} —{" "}
@@ -172,9 +176,6 @@ export default function AreaAndReport({
             </div>
           ) : (
             <>
-              {/* Step 1: which utility. Water is a peer of electricity here,
-                  not hidden behind it — the fix for reports only ever writing
-                  'electricity'. */}
               <p className="text-xs mb-1.5" style={{ color: T.muted }}>{s.reportWhich}</p>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 {(["electricity", "water"] as const).map((u) => {
@@ -195,23 +196,28 @@ export default function AreaAndReport({
                 })}
               </div>
 
-              {/* Step 2: cut or restored, for the chosen utility. */}
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => setPending("cut")}
+                <button onClick={() => chosen ? setPending("cut") : setMessage(s.pickAreaFirst)}
                         className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
                         style={{ background: reportUtility === "water" ? T.aqua : T.amber,
                                  color: reportUtility === "water" ? "#04222a" : "#1a1205" }}>
                   {reportUtility === "water" ? <Droplets size={15} /> : <Zap size={15} />} {s.reportCut}
                 </button>
-                <button onClick={() => setPending("restored")}
+                <button onClick={() => chosen ? setPending("restored") : setMessage(s.pickAreaFirst)}
                         className="rounded-lg py-3 text-sm font-bold"
                         style={{ background: T.ok, color: "#06301b" }}>
                   {s.reportBack}
                 </button>
               </div>
+              {!chosen && (
+                <p className="text-[11px] mt-2 text-center" style={{ color: T.muted }}>
+                  {s.pickAreaFirst}
+                </p>
+              )}
             </>
           )}
-          {message && <p className="text-xs mt-2" style={{ color: T.ok }}>{message}</p>}
+          {message && <p className="text-xs mt-2"
+                         style={{ color: chosen ? T.ok : T.amber }}>{message}</p>}
         </div>
       )}
     </div>

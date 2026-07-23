@@ -88,34 +88,56 @@ export async function fetchPlaces(): Promise<PublicPlace[]> {
  * on the server, and only the aggregated numbers are sent to the browser. The
  * service key still never leaves the server.
  */
-export type UtilityCounts = { cut: number; restored: number };
-export type PlaceReportCounts = {
-  electricity: UtilityCounts; water: UtilityCounts; lastAt: string | null;
+// Per-utility community-report stats for one place: cut/restored counts in the
+// last 90 minutes and since Tunisia midnight ("today"), and the most recent
+// report time. Real numbers only — a place with none is simply absent.
+export type UtilityStat = {
+  cut90: number; cutToday: number; restored90: number; lastAt: string | null;
 };
+export type PlaceReportCounts = { electricity: UtilityStat; water: UtilityStat };
 
-export async function fetchReportCounts(
-  windowMinutes = 90
-): Promise<Record<number, PlaceReportCounts>> {
-  const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
+/** Tunisia (UTC+1) midnight for "today", as an ISO instant. */
+function tunisMidnightISO(): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Tunis", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}T00:00:00+01:00`;
+}
+
+export async function fetchReportCounts(): Promise<Record<number, PlaceReportCounts>> {
+  // Fetch the last 24h once (covers both windows), then derive 90-min and
+  // today counts in memory — one query instead of several.
+  const dayAgo = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const midnight = tunisMidnightISO();
+  const ninetyAgo = Date.now() - 90 * 60_000;
   const rows = await sbGet<{ place_id: number | null; kind: string; utility: string; reported_at: string }[]>("reports", {
     select: "place_id,kind,utility,reported_at",
-    reported_at: `gte.${since}`,
+    reported_at: `gte.${dayAgo}`,
     is_flagged: "eq.false",
-    limit: "5000",
+    limit: "10000",
   });
   const empty = (): PlaceReportCounts => ({
-    electricity: { cut: 0, restored: 0 },
-    water: { cut: 0, restored: 0 },
-    lastAt: null,
+    electricity: { cut90: 0, cutToday: 0, restored90: 0, lastAt: null },
+    water: { cut90: 0, cutToday: 0, restored90: 0, lastAt: null },
   });
   const out: Record<number, PlaceReportCounts> = {};
   for (const r of rows) {
     if (r.place_id == null) continue;
     const u = r.utility === "water" ? "water" : "electricity";
-    const rec = (out[r.place_id] ??= empty());
-    if (r.kind === "cut") rec[u].cut += 1;
-    else if (r.kind === "restored") rec[u].restored += 1;
-    if (!rec.lastAt || r.reported_at > rec.lastAt) rec.lastAt = r.reported_at;
+    const st = (out[r.place_id] ??= empty())[u];
+    const t = new Date(r.reported_at).getTime();
+    const in90 = t >= ninetyAgo;
+    const today = r.reported_at >= midnight;
+    if (r.kind === "cut") {
+      if (today) st.cutToday += 1;
+      if (in90) st.cut90 += 1;
+    } else if (r.kind === "restored" && in90) {
+      st.restored90 += 1;
+    }
+    if (!st.lastAt || r.reported_at > st.lastAt) st.lastAt = r.reported_at;
   }
   return out;
 }
