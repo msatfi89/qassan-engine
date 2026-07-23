@@ -361,31 +361,42 @@ export default function PublicApp({
 
   /** Map shading. Built from the same recent window the feed uses, so the map
    *  and the list can never disagree about what is happening. */
-  const mapData = useMemo(() => {
-    const out: Record<string, MapDatum> = {};
-    const touch = (name: string) =>
-      (out[name] ??= { liveElectric: false, liveWater: false, upcoming: false, observed: false, reports: 0 });
+  // Two layers so the map can shade the national view AND the zoomed-in
+  // delegation view from the same events: one keyed by governorate name, one
+  // by delegation place_id.
+  const { mapData, delData } = useMemo(() => {
+    const gov: Record<string, MapDatum> = {};
+    const del: Record<number, MapDatum> = {};
+    const blank = (): MapDatum => ({ liveElectric: false, liveWater: false, upcoming: false, observed: false, reports: 0 });
+    const touchGov = (name: string) => (gov[name] ??= blank());
+    const touchDel = (id: number) => (del[id] ??= blank());
+    const apply = (d: MapDatum, e: (typeof recent)[number]) => {
+      if (!e.is_official) { d.observed = true; return; }
+      if (e._status.status === "live") {
+        if (e.utility === "water") d.liveWater = true; else d.liveElectric = true;
+      } else if (e._status.status === "upcoming") d.upcoming = true;
+    };
     for (const e of recent) {
       for (const a of e.event_areas) {
         const g = govNameOf(a.place_id);
-        if (!g) continue;
-        const d = touch(g);
-        // An observation is live by the clock (starts_at = now), but it must
-        // never paint the governorate official amber. Route it to its own flag.
-        if (!e.is_official) { d.observed = true; continue; }
-        if (e._status.status === "live") {
-          if (e.utility === "water") d.liveWater = true;
-          else d.liveElectric = true;
-        } else if (e._status.status === "upcoming") d.upcoming = true;
+        if (g) apply(touchGov(g), e);
+        // Only delegation-level links shade the zoomed view; a governorate-wide
+        // link would otherwise flood every delegation as if each were named.
+        const p = places.find((x) => x.id === a.place_id);
+        if (p && p.level !== "governorate") apply(touchDel(a.place_id), e);
       }
     }
     for (const [placeId, c] of Object.entries(reportCounts)) {
-      const g = govNameOf(Number(placeId));
+      const id = Number(placeId);
       const cuts = c.electricity.cut + c.water.cut;
-      if (g && cuts > 0) touch(g).reports += cuts;
+      if (cuts <= 0) continue;
+      const g = govNameOf(id);
+      if (g) touchGov(g).reports += cuts;
+      const p = places.find((x) => x.id === id);
+      if (p && p.level !== "governorate") touchDel(id).reports += cuts;
     }
-    return out;
-  }, [recent, reportCounts, govNameOf]);
+    return { mapData: gov, delData: del };
+  }, [recent, reportCounts, govNameOf, places]);
 
   const counts = area ? reportCounts[area.id] : undefined;
 
@@ -483,7 +494,8 @@ export default function PublicApp({
       </section>
 
       <div className="mb-4">
-        <TunisiaMap data={mapData} lang={lang} selected={govFilter} onSelect={setGovFilter} />
+        <TunisiaMap govData={mapData} delData={delData} lang={lang}
+                    selected={govFilter} onSelect={setGovFilter} />
       </div>
 
       {area && mine.length > 0 && (

@@ -1,4 +1,5 @@
 import geo from "./tunisia-governorates.json";
+import del from "./tunisia-delegations.json";
 
 /**
  * Tunisia governorate boundaries, from geoBoundaries (gbOpen, TUN ADM1),
@@ -25,8 +26,31 @@ export type GovFeature = {
 
 export const GOVERNORATES = (geo as unknown as { features: GovFeature[] }).features;
 
+export type DelegationFeature = {
+  type: "Feature";
+  properties: {
+    name_ar: string;
+    // Registry place id, or null when this shape did not match the registry.
+    // A null shape is drawn neutral grey and NEVER coloured by a cut — an
+    // unmatched boundary must never claim an outage. ~94% carry an id.
+    place_id: number | null;
+    gov_iso: string | null;
+    gov_ar: string | null;
+  };
+  geometry:
+    | { type: "Polygon"; coordinates: Ring[] }
+    | { type: "MultiPolygon"; coordinates: Ring[][] };
+};
+
+export const DELEGATIONS = (del as unknown as { features: DelegationFeature[] }).features;
+
+/** Delegations of one governorate, by its ISO code. */
+export function delegationsOf(govIso: string): DelegationFeature[] {
+  return DELEGATIONS.filter((d) => d.properties.gov_iso === govIso);
+}
+
 /** Polygons of a feature, normalised so callers need not branch on the type. */
-function polygonsOf(f: GovFeature): Ring[][] {
+function polygonsOf(f: { geometry: GovFeature["geometry"] | DelegationFeature["geometry"] }): Ring[][] {
   return f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates;
 }
 
@@ -46,8 +70,21 @@ export type Projection = {
  * d3-geo for one country outline.
  */
 export function makeProjection(width = 300): Projection {
+  return makeProjectionFor(GOVERNORATES, width);
+}
+
+/**
+ * Fit a projection to any set of features — the whole country for the national
+ * view, or one governorate's delegations when zoomed in, so they fill the
+ * frame instead of sitting tiny in a corner.
+ */
+export function makeProjectionFor(
+  features: { geometry: GovFeature["geometry"] | DelegationFeature["geometry"] }[],
+  width = 300,
+  pad = 0.05
+): Projection {
   let minLon = 180, maxLon = -180, minLat = 90, maxLat = -90;
-  for (const f of GOVERNORATES) {
+  for (const f of features) {
     for (const poly of polygonsOf(f)) {
       for (const ring of poly) {
         for (const [lon, lat] of ring) {
@@ -59,6 +96,9 @@ export function makeProjection(width = 300): Projection {
       }
     }
   }
+  // A little padding so strokes at the edge are not clipped.
+  const dLon = (maxLon - minLon) * pad, dLat = (maxLat - minLat) * pad;
+  minLon -= dLon; maxLon += dLon; minLat -= dLat; maxLat += dLat;
   const midLat = ((minLat + maxLat) / 2) * (Math.PI / 180);
   const lonScale = Math.cos(midLat);
   const spanX = (maxLon - minLon) * lonScale;
@@ -79,8 +119,8 @@ export function makeProjection(width = 300): Projection {
   };
 }
 
-/** SVG path data for one governorate under a projection. */
-export function pathFor(f: GovFeature, p: Projection): string {
+/** SVG path data for one feature (governorate or delegation) under a projection. */
+export function pathFor(f: { geometry: GovFeature["geometry"] | DelegationFeature["geometry"] }, p: Projection): string {
   const parts: string[] = [];
   for (const poly of polygonsOf(f)) {
     for (const ring of poly) {
