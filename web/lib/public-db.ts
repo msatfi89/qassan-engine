@@ -88,22 +88,30 @@ export async function fetchPlaces(): Promise<PublicPlace[]> {
  * on the server, and only the aggregated numbers are sent to the browser. The
  * service key still never leaves the server.
  */
+export type UtilityCounts = { cut: number; restored: number };
+export type PlaceReportCounts = { electricity: UtilityCounts; water: UtilityCounts };
+
 export async function fetchReportCounts(
   windowMinutes = 90
-): Promise<Record<number, { cut: number; restored: number }>> {
+): Promise<Record<number, PlaceReportCounts>> {
   const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
-  const rows = await sbGet<{ place_id: number | null; kind: string }[]>("reports", {
-    select: "place_id,kind",
+  const rows = await sbGet<{ place_id: number | null; kind: string; utility: string }[]>("reports", {
+    select: "place_id,kind,utility",
     reported_at: `gte.${since}`,
     is_flagged: "eq.false",
     limit: "5000",
   });
-  const out: Record<number, { cut: number; restored: number }> = {};
+  const empty = (): PlaceReportCounts => ({
+    electricity: { cut: 0, restored: 0 },
+    water: { cut: 0, restored: 0 },
+  });
+  const out: Record<number, PlaceReportCounts> = {};
   for (const r of rows) {
     if (r.place_id == null) continue;
-    out[r.place_id] ??= { cut: 0, restored: 0 };
-    if (r.kind === "cut") out[r.place_id].cut += 1;
-    else if (r.kind === "restored") out[r.place_id].restored += 1;
+    const u = r.utility === "water" ? "water" : "electricity";
+    (out[r.place_id] ??= empty());
+    if (r.kind === "cut") out[r.place_id][u].cut += 1;
+    else if (r.kind === "restored") out[r.place_id][u].restored += 1;
   }
   return out;
 }

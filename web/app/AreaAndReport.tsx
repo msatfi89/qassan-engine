@@ -40,7 +40,12 @@ export default function AreaAndReport({
   const s = STR[lang];
   const governorates = places.filter((p) => p.level === "governorate");
   const [govId, setGovId] = useState<number | null>(null);
-  const [pending, setPending] = useState<{ kind: ReportKind; utility: "electricity" | "water" } | null>(null);
+  // Which utility the report is about. Water is a first-class choice, not an
+  // afterthought — SONEDE cuts are a year-round differentiator, unlike STEG's
+  // summer peak — so the toggle defaults to nothing pre-selected visually but
+  // starts on electricity for a one-tap common case.
+  const [reportUtility, setReportUtility] = useState<"electricity" | "water">("electricity");
+  const [pending, setPending] = useState<ReportKind | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -68,14 +73,14 @@ export default function AreaAndReport({
       const res = await submitReport({
         deviceId: loadDeviceId(),
         placeId: chosen.id,
-        utility: pending.utility,
-        kind: pending.kind,
+        utility: reportUtility,
+        kind: pending,
         // The user answered "yes, this is my area" — a fact about their answer,
         // not about where they physically are. No location is sent.
         areaConfirmed: true,
       });
       setMessage(res.ok
-        ? (pending.kind === "cut" ? "✓" : "✓") + " " + (lang === "ar" ? "شكرا، وصل بلاغك" : "Merci, signalement reçu")
+        ? "✓ " + (lang === "ar" ? "شكرا، وصل بلاغك" : "Merci, signalement reçu")
         : res.message);
     } finally {
       setBusy(false);
@@ -110,7 +115,8 @@ export default function AreaAndReport({
           {pending ? (
             <div className="rounded-xl p-3" style={{ background: T.surface2, border: `1px solid ${T.line}` }}>
               <p className="text-sm mb-2">
-                {label(chosen, lang)} — {pending.kind === "cut" ? s.reportCut : s.reportBack}؟
+                {label(chosen, lang)} · {reportUtility === "water" ? s.water : s.elec} —{" "}
+                {pending === "cut" ? s.reportCut : s.reportBack}؟
               </p>
               <div className="flex gap-2">
                 <button onClick={send} disabled={busy}
@@ -126,18 +132,45 @@ export default function AreaAndReport({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setPending({ kind: "cut", utility: "electricity" })}
-                      className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
-                      style={{ background: T.amber, color: "#1a1205" }}>
-                <Zap size={15} /> {s.reportCut}
-              </button>
-              <button onClick={() => setPending({ kind: "restored", utility: "electricity" })}
-                      className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
-                      style={{ background: T.ok, color: "#06301b" }}>
-                <Droplets size={15} style={{ opacity: 0 }} /> {s.reportBack}
-              </button>
-            </div>
+            <>
+              {/* Step 1: which utility. Water is a peer of electricity here,
+                  not hidden behind it — the fix for reports only ever writing
+                  'electricity'. */}
+              <p className="text-xs mb-1.5" style={{ color: T.muted }}>{s.reportWhich}</p>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                {(["electricity", "water"] as const).map((u) => {
+                  const on = reportUtility === u;
+                  const c = u === "water" ? T.aqua : T.amber;
+                  return (
+                    <button key={u} onClick={() => setReportUtility(u)}
+                            className="flex items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-bold"
+                            style={{
+                              background: on ? `${c}22` : "transparent",
+                              border: `1px solid ${on ? c : T.line}`,
+                              color: on ? c : T.muted,
+                            }}>
+                      {u === "water" ? <Droplets size={15} /> : <Zap size={15} />}
+                      {u === "water" ? s.water : s.elec}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Step 2: cut or restored, for the chosen utility. */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setPending("cut")}
+                        className="flex items-center justify-center gap-1.5 rounded-lg py-3 text-sm font-bold"
+                        style={{ background: reportUtility === "water" ? T.aqua : T.amber,
+                                 color: reportUtility === "water" ? "#04222a" : "#1a1205" }}>
+                  {reportUtility === "water" ? <Droplets size={15} /> : <Zap size={15} />} {s.reportCut}
+                </button>
+                <button onClick={() => setPending("restored")}
+                        className="rounded-lg py-3 text-sm font-bold"
+                        style={{ background: T.ok, color: "#06301b" }}>
+                  {s.reportBack}
+                </button>
+              </div>
+            </>
           )}
           {message && <p className="text-xs mt-2" style={{ color: T.ok }}>{message}</p>}
         </div>

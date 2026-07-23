@@ -5,7 +5,7 @@ import { Zap, Droplets, Clock, Radio, MapPin, Languages, AlertTriangle, Crosshai
 import { T, STR, type Lang } from "@/lib/theme";
 import { computeStatus, feedOrder, type StatusResult } from "@/lib/status";
 import { governorateAt } from "@/lib/geo";
-import type { PublicEvent, PublicPlace } from "@/lib/public-db";
+import type { PublicEvent, PublicPlace, PlaceReportCounts } from "@/lib/public-db";
 import AreaAndReport from "./AreaAndReport";
 import TunisiaMap, { type MapDatum } from "./TunisiaMap";
 
@@ -251,7 +251,7 @@ export default function PublicApp({
 }: {
   events: PublicEvent[];
   places: PublicPlace[];
-  reportCounts: Record<number, { cut: number; restored: number }>;
+  reportCounts: Record<number, PlaceReportCounts>;
 }) {
   const [lang, setLang] = useState<Lang>("ar");
   const [areaId, setAreaId] = useState<number | null>(null);
@@ -381,7 +381,8 @@ export default function PublicApp({
     }
     for (const [placeId, c] of Object.entries(reportCounts)) {
       const g = govNameOf(Number(placeId));
-      if (g && c.cut > 0) touch(g).reports += c.cut;
+      const cuts = c.electricity.cut + c.water.cut;
+      if (g && cuts > 0) touch(g).reports += cuts;
     }
     return out;
   }, [recent, reportCounts, govNameOf]);
@@ -441,9 +442,19 @@ export default function PublicApp({
               {!myLive && !myNext && (
                 <p className="text-xs mt-1" style={{ color: T.muted }}>{s.noArea}</p>
               )}
-              {counts && counts.cut > 0 && (
+              {counts && (counts.electricity.cut > 0 || counts.water.cut > 0) && (
                 <p className="text-xs mt-2" style={{ color: T.muted }}>
-                  {s.confirmed} {counts.cut}
+                  {counts.electricity.cut > 0 && (
+                    <span style={{ color: T.amber }}>
+                      ⚡ {s.confirmedElec} {counts.electricity.cut}
+                    </span>
+                  )}
+                  {counts.electricity.cut > 0 && counts.water.cut > 0 && " · "}
+                  {counts.water.cut > 0 && (
+                    <span style={{ color: T.aqua }}>
+                      💧 {s.confirmedWater} {counts.water.cut}
+                    </span>
+                  )}
                 </p>
               )}
             </div>
