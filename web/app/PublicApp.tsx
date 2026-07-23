@@ -23,7 +23,7 @@ const AREA_KEY = "qassan.area";
 const THEME_KEY = "qassan.theme";
 const TZ = "Africa/Tunis";
 
-export type TabKey = "home" | "map" | "report" | "areas" | "stats";
+export type TabKey = "home" | "map" | "report" | "stats";
 
 type Ev = PublicEvent & { _status: StatusResult };
 
@@ -580,10 +580,11 @@ export default function PublicApp({
     approved: events.length,
   }), [withStatus, events, reports24]);
 
+  // Tapping an area in the report tab's list selects it for the report flow
+  // above (and everywhere else) without navigating away.
   const pickFromList = (id: number) => {
     setAreaId(id);
     localStorage.setItem(AREA_KEY, String(id));
-    setActiveTab("home");
   };
 
   return (
@@ -750,25 +751,29 @@ export default function PublicApp({
         </div>
       )}
 
-      {/* ================= REPORT ================= */}
+      {/* ================= REPORT (+ areas list) ================= */}
       {activeTab === "report" && (
-        <section className="rounded-2xl p-4"
-                 style={{ background: T.surface, border: `1px solid ${T.line}` }}>
-          <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
-          <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
-          <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
-                         selectedId={areaId} showReport={true} />
-          <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
-            {rtl
-              ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
-              : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
-          </p>
-        </section>
-      )}
+        <div className="grid gap-4">
+          <section className="rounded-2xl p-4"
+                   style={{ background: T.surface, border: `1px solid ${T.line}` }}>
+            <h2 className="text-base font-bold mb-1">{s.tabReport}</h2>
+            <p className="text-xs mb-4" style={{ color: T.muted }}>{s.reportStep3}</p>
+            <AreaAndReport places={places} lang={lang} onAreaChange={setAreaId}
+                           selectedId={areaId} showReport={true} />
+            <p className="text-[11px] mt-4 leading-relaxed" style={{ color: T.muted }}>
+              {rtl
+                ? "التبليغ مجهول — ما نجمعو حتى بيانات شخصية. الموقع يتحسب في هاتفك."
+                : "Signalement anonyme — aucune donnée personnelle. Position calculée sur votre téléphone."}
+            </p>
+          </section>
 
-      {/* ================= AREAS ================= */}
-      {activeTab === "areas" && (
-        <AreasTab rows={areaRows} lang={lang} onPick={pickFromList} />
+          {/* The areas list lives here now: see any area's state and report it
+              without leaving the page. Tapping a card sets it as your area. */}
+          <div>
+            <h3 className="text-sm font-bold mb-2 px-1" style={{ color: T.text }}>{s.tabAreas}</h3>
+            <AreasTab rows={areaRows} lang={lang} onPick={pickFromList} />
+          </div>
+        </div>
       )}
 
       {/* ================= STATS ================= */}

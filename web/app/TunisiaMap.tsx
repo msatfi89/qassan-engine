@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  GOVERNORATES, delegationsOf, makeProjection, makeProjectionFor,
+  GOVERNORATES, DELEGATIONS, delegationsOf, makeProjection, makeProjectionFor,
   pathFor, projectedBounds,
 } from "@/lib/geo";
 import { T, STR, type Lang } from "@/lib/theme";
@@ -109,6 +109,33 @@ export default function TunisiaMap({
   // reveal their name on tap instead of overlapping.
   const MIN_W = 34, MIN_H = 16;
 
+  // Country view: one marker per AFFECTED DELEGATION at its centroid, not a
+  // whole-governorate fill — colouring a whole province when only a few of its
+  // delegations are named overstates the cut. Markers falling in the same
+  // ~14px cell are merged so a dense governorate does not become a blob; the
+  // merged marker takes the highest-severity colour and grows with the count.
+  const priority = (d: MapDatum) =>
+    d.liveElectric ? 6 : d.liveWater ? 5 : d.upcoming ? 4 : d.upcomingWater ? 3 : d.observed ? 2 : d.reports > 0 ? 1 : 0;
+  const markers = useMemo(() => {
+    const CELL = 14;
+    const cells = new Map<string, { cx: number; cy: number; count: number;
+      best: { p: number; datum: MapDatum; pid: number } | null }>();
+    for (const f of DELEGATIONS) {
+      const pid = f.properties.place_id;
+      if (pid == null) continue;                 // unmatched boundary → never a marker
+      const d = delData[pid];
+      if (!d || !isAffected(d)) continue;
+      const b = projectedBounds(f, nationalProj);
+      const key = `${Math.round(b.cx / CELL)},${Math.round(b.cy / CELL)}`;
+      let c = cells.get(key);
+      if (!c) { c = { cx: b.cx, cy: b.cy, count: 0, best: null }; cells.set(key, c); }
+      c.count++;
+      const p = priority(d);
+      if (!c.best || p > c.best.p) { c.best = { p, datum: d, pid }; c.cx = b.cx; c.cy = b.cy; }
+    }
+    return [...cells.values()];
+  }, [delData, nationalProj]);
+
   return (
     <div className="rounded-2xl p-4" style={{ background: T.surface, border: `1px solid ${T.line}` }}>
       <div className="flex items-center justify-between mb-2">
@@ -128,43 +155,60 @@ export default function TunisiaMap({
       <div dir="ltr">
         <svg viewBox={`0 0 ${proj.width} ${proj.height}`} className="w-full h-auto"
              role="img" aria-label={lang === "ar" ? "خريطة تونس" : "Carte de Tunisie"}>
-          {(zoom ? zoom.items : national).map((it, i) => {
-            const isGov = !zoom;
-            const name = it.f.properties.name_ar;
-            // @ts-expect-error place_id exists only on delegation features
-            const pid: number | null = isGov ? null : (it.f.properties.place_id ?? null);
-            const datum = isGov ? govData[name] : (pid != null ? delData[pid] : undefined);
-            const unmatched = !isGov && pid == null;
-            const fill = unmatched ? C.none : fillFor(datum);
-            const affected = !unmatched && isAffected(datum);
-            const isSel = isGov && selected === name;
-            const display = isGov ? localizeGov(name) : delName(pid, name);
 
+          {/* ---------- COUNTRY VIEW: faint outlines + delegation markers ---------- */}
+          {!zoom && national.map((it, i) => {
+            const name = it.f.properties.name_ar;
+            const isSel = selected === name;
             return (
-              <path key={i} d={it.d} fill={fill}
-                    stroke={isSel ? T.text : T.line}
-                    strokeWidth={isSel ? 1.6 : 0.5}
+              // Outline only — no province-wide fill. Still clickable to zoom.
+              <path key={`g${i}`} d={it.d} fill="transparent"
+                    stroke={isSel ? T.text : T.line} strokeWidth={isSel ? 1.4 : 0.6}
                     style={{ cursor: "pointer" }}
-                    onClick={() => {
-                      if (isGov) { onSelect(isSel ? null : name); setTapped(null); }
-                      else setTapped(describe("del", pid ?? -1) ?? { title: display });
-                    }}>
+                    onClick={() => { onSelect(isSel ? null : name); setTapped(null); }}>
+                <title>{localizeGov(name)}</title>
+              </path>
+            );
+          })}
+          {!zoom && markers.map((m, i) => {
+            if (!m.best) return null;
+            const r = Math.min(7, 3 + (m.count - 1));
+            return (
+              <g key={`mk${i}`} style={{ cursor: "pointer" }}
+                 onClick={() => setTapped(describe("del", m.best!.pid) ?? { title: "" })}>
+                <circle cx={m.cx} cy={m.cy} r={r + 0.8} fill={T.night} opacity={0.5} />
+                <circle cx={m.cx} cy={m.cy} r={r} fill={fillFor(m.best.datum)}
+                        stroke={T.night} strokeWidth={0.7} />
+                {m.count > 1 && (
+                  <text x={m.cx} y={m.cy} fontSize={r} textAnchor="middle"
+                        dominantBaseline="central" fill={T.night} fontWeight={800}
+                        style={{ pointerEvents: "none" }}>{m.count}</text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* ---------- DRILL-DOWN VIEW: full-shape shading is accurate here ---------- */}
+          {zoom && zoom.items.map((it, i) => {
+            const name = it.f.properties.name_ar;
+            const pid: number | null = it.f.properties.place_id ?? null;
+            const datum = pid != null ? delData[pid] : undefined;
+            const unmatched = pid == null;
+            const display = delName(pid, name);
+            return (
+              <path key={i} d={it.d} fill={unmatched ? C.none : fillFor(datum)}
+                    stroke={T.line} strokeWidth={0.5} style={{ cursor: "pointer" }}
+                    onClick={() => setTapped(describe("del", pid ?? -1) ?? { title: display })}>
                 <title>{display}</title>
               </path>
             );
           })}
-
-          {/* Labels: drawn after all shapes so they sit on top. Only affected
-              shapes are labelled, and only where the name fits; smaller
-              affected shapes get a dot and reveal their name on tap. */}
-          {(zoom ? zoom.items : national).map((it, i) => {
-            const isGov = !zoom;
+          {zoom && zoom.items.map((it, i) => {
             const name = it.f.properties.name_ar;
-            // @ts-expect-error place_id only on delegations
-            const pid: number | null = isGov ? null : (it.f.properties.place_id ?? null);
-            const datum = isGov ? govData[name] : (pid != null ? delData[pid] : undefined);
-            if (isGov ? !isAffected(datum) : (pid == null || !isAffected(datum))) return null;
-            const display = isGov ? localizeGov(name) : delName(pid, name);
+            const pid: number | null = it.f.properties.place_id ?? null;
+            const datum = pid != null ? delData[pid] : undefined;
+            if (pid == null || !isAffected(datum)) return null;
+            const display = delName(pid, name);
             const fits = it.b.w >= MIN_W && it.b.h >= MIN_H;
             const fontSize = Math.max(7, Math.min(11, it.b.w / Math.max(6, display.length)));
             if (!fits) {
@@ -172,7 +216,7 @@ export default function TunisiaMap({
                 <circle key={`m${i}`} cx={it.b.cx} cy={it.b.cy} r={2.2}
                         fill={T.text} stroke={T.night} strokeWidth={0.6}
                         style={{ cursor: "pointer" }}
-                        onClick={() => setTapped(describe(isGov ? "gov" : "del", isGov ? name : (pid ?? -1)) ?? { title: display })} />
+                        onClick={() => setTapped(describe("del", pid ?? -1) ?? { title: display })} />
               );
             }
             return (

@@ -1,20 +1,20 @@
 "use client";
 
-import { Home, Map as MapIcon, Megaphone, ListChecks, BarChart3 } from "lucide-react";
+import { Home, Map as MapIcon, Megaphone, BarChart3 } from "lucide-react";
 import { T, STR, type Lang } from "@/lib/theme";
 import type { TabKey } from "./PublicApp";
 
 /**
- * Fixed bottom tab bar, five items, with the center report action raised as a
+ * Fixed bottom tab bar, four items, with the center report action raised as a
  * FAB. RTL-aware by construction: it uses the document direction (justify
  * evenly) rather than a hardcoded left→right order, so the same order reads
- * naturally in Arabic and French.
+ * naturally in Arabic and French. The areas list now lives inside the report
+ * tab, so this dropped from five items to four.
  */
 const ITEMS: { key: TabKey; icon: typeof Home; fab?: boolean }[] = [
   { key: "home", icon: Home },
   { key: "map", icon: MapIcon },
   { key: "report", icon: Megaphone, fab: true },
-  { key: "areas", icon: ListChecks },
   { key: "stats", icon: BarChart3 },
 ];
 
@@ -27,7 +27,7 @@ export default function BottomNav({
 }) {
   const s = STR[lang];
   const label: Record<TabKey, string> = {
-    home: s.tabHome, map: s.tabMap, report: s.tabReport, areas: s.tabAreas, stats: s.tabStats,
+    home: s.tabHome, map: s.tabMap, report: s.tabReport, stats: s.tabStats,
   };
 
   return (
