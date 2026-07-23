@@ -119,6 +119,33 @@ export function makeProjectionFor(
   };
 }
 
+/**
+ * Centroid and pixel size of a feature under a projection, for label placement.
+ * cx/cy is the area-weighted-ish centroid (mean of the largest ring's points);
+ * w/h is the projected bounding box, used to decide whether a label fits inside.
+ */
+export function projectedBounds(
+  f: { geometry: GovFeature["geometry"] | DelegationFeature["geometry"] },
+  p: Projection
+): { cx: number; cy: number; w: number; h: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // Use the largest ring for the centroid so a small enclave does not pull it.
+  let best: Ring | null = null, bestLen = -1;
+  for (const poly of polygonsOf(f)) {
+    const ring = poly[0];
+    if (ring && ring.length > bestLen) { bestLen = ring.length; best = ring; }
+    for (const r of poly) for (const [lon, lat] of r) {
+      const [x, y] = p.project(lon, lat);
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  let sx = 0, sy = 0, n = 0;
+  for (const [lon, lat] of best ?? []) { const [x, y] = p.project(lon, lat); sx += x; sy += y; n++; }
+  return { cx: n ? sx / n : (minX + maxX) / 2, cy: n ? sy / n : (minY + maxY) / 2,
+           w: maxX - minX, h: maxY - minY };
+}
+
 /** SVG path data for one feature (governorate or delegation) under a projection. */
 export function pathFor(f: { geometry: GovFeature["geometry"] | DelegationFeature["geometry"] }, p: Projection): string {
   const parts: string[] = [];

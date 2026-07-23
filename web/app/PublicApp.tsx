@@ -7,7 +7,7 @@ import { computeStatus, feedOrder, type StatusResult } from "@/lib/status";
 import { governorateAt } from "@/lib/geo";
 import type { PublicEvent, PublicPlace, PlaceReportCounts } from "@/lib/public-db";
 import AreaAndReport from "./AreaAndReport";
-import TunisiaMap, { type MapDatum } from "./TunisiaMap";
+import TunisiaMap, { type MapDatum, type ShapeInfo } from "./TunisiaMap";
 
 /** How far back the front page looks. The archive stays in the database and
  *  keeps its value; it just does not belong on a page answering "is my power
@@ -406,14 +406,16 @@ export default function PublicApp({
   const { mapData, delData } = useMemo(() => {
     const gov: Record<string, MapDatum> = {};
     const del: Record<number, MapDatum> = {};
-    const blank = (): MapDatum => ({ liveElectric: false, liveWater: false, upcoming: false, observed: false, reports: 0 });
+    const blank = (): MapDatum => ({ liveElectric: false, liveWater: false, upcoming: false, upcomingWater: false, observed: false, reports: 0 });
     const touchGov = (name: string) => (gov[name] ??= blank());
     const touchDel = (id: number) => (del[id] ??= blank());
     const apply = (d: MapDatum, e: (typeof recent)[number]) => {
       if (!e.is_official) { d.observed = true; return; }
       if (e._status.status === "live") {
         if (e.utility === "water") d.liveWater = true; else d.liveElectric = true;
-      } else if (e._status.status === "upcoming") d.upcoming = true;
+      } else if (e._status.status === "upcoming") {
+        if (e.utility === "water") d.upcomingWater = true; else d.upcoming = true;
+      }
     };
     for (const e of recent) {
       for (const a of e.event_areas) {
@@ -438,6 +440,59 @@ export default function PublicApp({
     return { mapData: gov, delData: del };
   }, [recent, reportCounts, govNameOf, tree]);
 
+  const TZ = "Africa/Tunis";
+  const hh = (iso: string | null) => iso ? new Intl.DateTimeFormat("fr-TN", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(iso)) : null;
+
+  // Governorate name in the current language, for the map header and labels.
+  const localizeGov = useMemo(() => {
+    const fr = new Map(places.filter((p) => p.level === "governorate").map((p) => [p.name_ar, p.name_fr]));
+    return (nameAr: string) => (lang === "fr" ? fr.get(nameAr) ?? nameAr : nameAr);
+  }, [places, lang]);
+
+  // Delegation label by place_id (registry name, localized), falling back to the
+  // boundary file's Arabic name for shapes that never matched the registry.
+  const delName = useMemo(() => {
+    return (placeId: number | null, fallbackAr: string) => {
+      const p = placeId != null ? tree.byId.get(placeId) : undefined;
+      return p ? (lang === "fr" && p.name_fr ? p.name_fr : p.name_ar) : fallbackAr;
+    };
+  }, [tree, lang]);
+
+  // Build the tap-panel description for a governorate or delegation from the
+  // events currently affecting it, including the named localities the bulletin
+  // listed (item 6: never leave the user guessing which town the shape covers).
+  const describe = useMemo(() => {
+    return (kind: "gov" | "del", key: string | number): ShapeInfo | null => {
+      const evs = recent.filter((e) => e.event_areas.some((a) => {
+        if (kind === "gov") return govNameOf(a.place_id) === key;
+        return tree.delegationIdOf(a.place_id) === key;
+      }));
+      const title = kind === "gov" ? localizeGov(String(key))
+        : delName(Number(key), tree.byId.get(Number(key))?.name_ar ?? "");
+      if (evs.length === 0) return { title };
+      // Prefer a live event, else the soonest upcoming.
+      const live = evs.find((e) => e._status.status === "live");
+      const e = live ?? evs.sort((a, b) => (a._status.startsInMin ?? 0) - (b._status.startsInMin ?? 0))[0];
+      const observation = !e.is_official;
+      const utility = e.utility === "water" ? s.water : s.elec;
+      const status = observation ? s.observed
+        : e._status.status === "live" ? s.liveNow
+        : e._status.status === "upcoming" ? s.upcoming : s.ended;
+      const start = hh(e.starts_at), end = hh(e.ends_at);
+      const window = start ? (e.end_time_official && end ? `${start} → ${end}` : `${start} · ${s.endsUnknown}`) : undefined;
+      // Named localities across all affecting events (localized, deduped).
+      const named = Array.from(new Set(
+        evs.flatMap((ev) => ev.event_areas.filter((a) => a.named_explicitly)
+          .map((a) => (lang === "fr" && a.places?.name_fr ? a.places.name_fr : a.places?.name_ar) ?? ""))
+      )).filter(Boolean);
+      return {
+        title, utility, status, window,
+        source: observation ? s.observedShort : "STEG / SONEDE",
+        namedAreas: named,
+      };
+    };
+  }, [recent, govNameOf, tree, localizeGov, delName, lang, s]);
+
   // Reports for the selected area: its own plus everything beneath it, so a
   // delegation's count includes its neighborhoods and a neighborhood shows just
   // its own. Aggregation is upward for display, per the spec.
@@ -453,6 +508,24 @@ export default function PublicApp({
     }
     return acc;
   }, [area, reportCounts, tree]);
+
+  // Named localities from the events currently in view — the ones the bulletin
+  // listed, so a coloured shape is never a mystery. Scoped to the zoomed
+  // governorate when one is selected. Live and upcoming only.
+  const namedInView = useMemo(() => {
+    const evs = recent.filter((e) =>
+      (e._status.status === "live" || e._status.status === "upcoming") &&
+      (!govFilter || e.event_areas.some((a) => govNameOf(a.place_id) === govFilter)));
+    const names = new Set<string>();
+    for (const e of evs)
+      for (const a of e.event_areas)
+        if (a.named_explicitly && a.places) {
+          const p = tree.byId.get(a.place_id);
+          if (p && p.level !== "governorate")
+            names.add(lang === "fr" && a.places.name_fr ? a.places.name_fr : a.places.name_ar);
+        }
+    return [...names];
+  }, [recent, govFilter, govNameOf, tree, lang]);
 
   return (
     <main className="mx-auto w-full max-w-[640px] px-4 pb-16 pt-5" style={{ color: T.text }}>
@@ -549,7 +622,14 @@ export default function PublicApp({
 
       <div className="mb-4">
         <TunisiaMap govData={mapData} delData={delData} lang={lang}
-                    selected={govFilter} onSelect={setGovFilter} />
+                    selected={govFilter} onSelect={setGovFilter}
+                    localizeGov={localizeGov} delName={delName} describe={describe} />
+        {namedInView.length > 0 && (
+          <p className="text-xs mt-2 leading-relaxed px-1" style={{ color: T.muted }}>
+            <span style={{ color: T.amber }}>{s.namedInBulletin}: </span>
+            {namedInView.join("، ")}
+          </p>
+        )}
       </div>
 
       {area && mine.length > 0 && (

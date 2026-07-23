@@ -72,6 +72,7 @@ export const STR = {
     observedShort: "غير مؤكد",
     mapUpcoming: "قطع متوقع اليوم",
     tapGov: "👆 اضغط على ولاية لعرض معتمدياتها",
+    namedInBulletin: "المناطق المذكورة في البلاغ",
   },
   fr: {
     appName: "9assan",
@@ -122,5 +123,6 @@ export const STR = {
     observedShort: "Non confirmé",
     mapUpcoming: "Coupure prévue aujourd'hui",
     tapGov: "👆 Touchez un gouvernorat pour ses délégations",
+    namedInBulletin: "Zones citées dans le communiqué",
   },
 } as const;
