@@ -46,6 +46,7 @@ export default async function AdminLayout({
         <span className="badge">BETA</span>
         <a href="/admin/auto" className="nav-link">Auto-approved</a>
         <a href="/admin/observe" className="nav-link">+ رصد اجتماعي</a>
+        <a href="/admin/places" className="nav-link">+ حي</a>
         <form action="/api/admin/logout" method="post" className="logout">
           <button type="submit">Log out</button>
         </form>
